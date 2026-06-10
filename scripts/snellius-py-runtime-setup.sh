@@ -59,7 +59,7 @@ fi
 ############################################
 # 2. load Snellius modules (Lmod)
 ############################################
-echo "[setup] Loading modules from the 2024 Snellius stack ..."
+echo "[setup] Loading modules from the 2025 Snellius stack ..."
 
 # `module` is a shell function defined by /etc/profile.d/lmod.sh; make sure
 # it is available even when this script is run with a non-interactive shell.
