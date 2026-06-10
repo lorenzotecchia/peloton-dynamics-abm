@@ -59,9 +59,6 @@ fi
 ############################################
 # 2. load Snellius modules (Lmod)
 ############################################
-# Snellius exposes year-based software stacks. 2024 ships Python 3.12 built
-# with GCC 13.3 — within our >=3.10,<3.14 range and recent enough for the
-# manylinux tensorflow 2.21 wheel on PyPI.
 echo "[setup] Loading modules from the 2024 Snellius stack ..."
 
 # `module` is a shell function defined by /etc/profile.d/lmod.sh; make sure
@@ -81,9 +78,10 @@ if ! command -v module >/dev/null 2>&1; then
 fi
 
 module purge
-module load 2024
-# Python 3.12 from the 2024 stack. If this exact name ever shifts, run
-# `module spider Python` on the login node and update the line below.
+module load 2025
+# If this exact name ever shifts, run
+# `module spider Python`
+# on the login node and update the line below.
 module load Python/3.12.3-GCCcore-13.3.0
 
 echo "[setup] Loaded modules:"
@@ -119,9 +117,6 @@ fi
 # venv lives on the same interpreter the cluster ships, instead of letting
 # uv download its own.
 
-# Add tensorflow[and-cuda] to the venv, which pulls in the CUDA runtime and cuDNN wheels so GPU jobs can actually use the GPU.
-echo "[setup] Adding tensorflow[and-cuda] to the venv (pulls in CUDA runtime + cuDNN) ..."
-uv add --python "$PYTHON_BIN" "tensorflow[and-cuda]>=2.21.0"
 echo "[setup] Running 'uv sync' (creates .venv, installs locked deps) ..."
 uv sync --python "$PYTHON_BIN"
 
@@ -132,10 +127,8 @@ echo "[setup] Verifying that tensorflow and keras import cleanly ..."
 uv run --python "$PYTHON_BIN" python - <<'PY'
 import sys
 print(f"python: {sys.version.split()[0]}")
-import numpy, tensorflow as tf, keras
+import numpy
 print(f"numpy:      {numpy.__version__}")
-print(f"tensorflow: {tf.__version__}")
-print(f"keras:      {keras.__version__}")
 PY
 
 echo
