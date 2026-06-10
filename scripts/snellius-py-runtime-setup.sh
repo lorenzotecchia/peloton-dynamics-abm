@@ -82,7 +82,7 @@ module load 2025
 # If this exact name ever shifts, run
 # `module spider Python`
 # on the login node and update the line below.
-module load Python/3.12.3-GCCcore-13.3.0
+module load Python/3.13.5-GCCcore-14.3.0
 
 echo "[setup] Loaded modules:"
 module list 2>&1 | sed 's/^/        /'
