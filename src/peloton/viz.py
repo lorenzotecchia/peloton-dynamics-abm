@@ -3,7 +3,6 @@
 from mesa.visualization import SolaraViz, make_plot_component, make_space_component
 from mesa.visualization.user_param import Slider
 
-from peloton.config import PelotonConfig
 from peloton.model import PelotonModel
 
 
@@ -31,19 +30,13 @@ model_params = {
 
 def build_model(n_agents=30, n_teams=5, base_speed=12.0, draft_radius=3.0, config=None):
     """Factory used for the standalone app launch."""
-    base = config or PelotonConfig()
-    cfg = PelotonConfig(
-        road_length=base.road_length,
-        road_width=base.road_width,
-        n_agents=int(n_agents),
-        n_teams=int(n_teams),
-        base_speed=float(base_speed),
-        speed_noise=base.speed_noise,
-        draft_radius=float(draft_radius),
-        draft_lateral=base.draft_lateral,
-        seed=base.seed,
+    return PelotonModel(
+        config=config,
+        n_agents=n_agents,
+        n_teams=n_teams,
+        base_speed=base_speed,
+        draft_radius=draft_radius,
     )
-    return PelotonModel(cfg)
 
 
 SpaceGraph = make_space_component(agent_portrayal)

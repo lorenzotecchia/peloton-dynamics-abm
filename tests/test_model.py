@@ -40,3 +40,11 @@ def test_datacollector_records_mean_exposure():
     assert "MeanExposure" in df.columns
     assert "Finished" in df.columns
     assert 0.0 <= df["MeanExposure"].iloc[-1] <= 1.0
+
+
+def test_model_accepts_keyword_overrides_for_viz():
+    model = PelotonModel(n_agents=8, n_teams=2, base_speed=10.0, draft_radius=2.5)
+    assert len(model.agents) == 8
+    assert model.config.n_teams == 2
+    assert model.config.base_speed == 10.0
+    assert model.config.draft_radius == 2.5

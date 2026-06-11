@@ -18,8 +18,8 @@ def _mean_exposure(model: "PelotonModel") -> float:
 class PelotonModel(Model):
     """A road full of cyclists that drift into drafting formations."""
 
-    def __init__(self, config: PelotonConfig | None = None):
-        config = config or PelotonConfig()
+    def __init__(self, config: PelotonConfig | None = None, **overrides):
+        config = self._resolve_config(config, overrides)
         super().__init__(seed=config.seed)
         self.config = config
         self.n_finished = 0
@@ -44,6 +44,33 @@ class PelotonModel(Model):
             }
         )
         self.datacollector.collect(self)
+
+    @staticmethod
+    def _resolve_config(config: PelotonConfig | None, overrides: dict) -> PelotonConfig:
+        """Build a config, applying any keyword overrides (used by SolaraViz sliders)."""
+        base = config or PelotonConfig()
+        if not overrides:
+            return base
+        fields = {
+            "road_length": base.road_length,
+            "road_width": base.road_width,
+            "n_agents": base.n_agents,
+            "n_teams": base.n_teams,
+            "base_speed": base.base_speed,
+            "speed_noise": base.speed_noise,
+            "draft_radius": base.draft_radius,
+            "draft_lateral": base.draft_lateral,
+            "seed": base.seed,
+        }
+        for key, value in overrides.items():
+            if key not in fields:
+                raise TypeError(f"Unknown model parameter: {key!r}")
+            if key in ("n_agents", "n_teams"):
+                value = int(value)
+            elif key != "seed":
+                value = float(value)
+            fields[key] = value
+        return PelotonConfig(**fields)
 
     def step(self):
         # Movement clamps forward position to road_length, so finishers simply pin
