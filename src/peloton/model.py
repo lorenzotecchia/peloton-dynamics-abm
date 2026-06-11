@@ -24,8 +24,8 @@ class PelotonModel(Model):
         self.config = config
         self.n_finished = 0
 
-        # x_max is exclusive in Mesa's ContinuousSpace (out_of_bounds uses x >= x_max),
-        # so add a small epsilon so that road_length itself is a valid coordinate.
+        # Mesa's ContinuousSpace treats x_max/y_max as exclusive (out_of_bounds uses
+        # coord >= max), so pad by a small epsilon to make road_length itself legal.
         self.space = ContinuousSpace(
             config.road_length + 1e-6, config.road_width + 1e-6, torus=False
         )
@@ -37,21 +37,6 @@ class PelotonModel(Model):
             y = self.random.uniform(0.0, config.road_width)
             self.space.place_agent(agent, (x, y))
 
-        self._finished_ids: set[int] = set()
-
-        # Wrap move_agent so that any position past road_length is clamped,
-        # preventing ContinuousSpace from raising an out-of-bounds exception.
-        _real_move = self.space.move_agent
-        _road_length = config.road_length
-
-        def _clamping_move(agent, pos):
-            x, y = pos
-            if x > _road_length:
-                x = _road_length
-            _real_move(agent, (x, y))
-
-        self.space.move_agent = _clamping_move  # type: ignore[method-assign]
-
         self.datacollector = DataCollector(
             model_reporters={
                 "MeanExposure": _mean_exposure,
@@ -61,12 +46,10 @@ class PelotonModel(Model):
         self.datacollector.collect(self)
 
     def step(self):
-        for agent in list(self.agents):
-            if agent.unique_id in self._finished_ids:
-                continue          # parked riders do not advance
-            agent.step()
-            x, y = agent.pos
-            if x >= self.config.road_length:
-                self._finished_ids.add(agent.unique_id)
-        self.n_finished = len(self._finished_ids)
+        # Movement clamps forward position to road_length, so finishers simply pin
+        # at the line and never leave the space.
+        self.agents.shuffle_do("step")
+        self.n_finished = sum(
+            1 for a in self.agents if a.pos[0] >= self.config.road_length
+        )
         self.datacollector.collect(self)

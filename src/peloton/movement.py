@@ -27,7 +27,8 @@ def next_position(agent, model):
 
     # Forward advance with uniform noise.
     advance = cfg.base_speed + model.random.uniform(-cfg.speed_noise, cfg.speed_noise)
-    new_x = x + advance
+    # Never advance past the finish line; riders pin there once they arrive.
+    new_x = min(x + advance, cfg.road_length)
 
     # Greedy shelter-seeking: pick the candidate lateral offset with lowest exposure,
     # evaluated at the CURRENT x against current neighbour positions.
