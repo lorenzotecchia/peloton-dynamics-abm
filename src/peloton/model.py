@@ -102,3 +102,5 @@ class PelotonModel(Model):
                 self.space.remove_agent(agent)
                 agent.remove()
         self.n_finished = len(self.finish_order)
+        if not len(self.agents):
+            self.running = False        # race over: stop the viz autoplay

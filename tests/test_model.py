@@ -78,3 +78,14 @@ def test_no_two_riders_ever_overlap():
     for s in range(1, 16):
         model.step()
         assert_no_overlaps(s)
+
+
+def test_race_stops_running_when_everyone_finished():
+    cfg = PelotonConfig(n_agents=6, n_teams=2, road_length=40.0,
+                        base_speed=12.0, speed_noise=0.0, seed=8)
+    model = PelotonModel(cfg)
+    assert model.running
+    for _ in range(8):
+        model.step()
+    assert len(model.agents) == 0
+    assert not model.running                       # autoplay stops at race end

@@ -8,7 +8,7 @@ from mesa.visualization import SolaraViz
 from peloton.viz import (
     ExposurePlot,
     FinishedPlot,
-    SpaceGraph,
+    RoadView,
     build_model,
     model_params,
 )
@@ -17,7 +17,7 @@ model = build_model()
 
 page = SolaraViz(
     model,
-    components=[SpaceGraph, ExposurePlot, FinishedPlot],
+    components=[RoadView, ExposurePlot, FinishedPlot],
     model_params=model_params,
     name="Cycling Peloton MVP",
 )

@@ -1,9 +1,21 @@
-"""SolaraViz wiring and the exposure -> color gradient."""
+"""SolaraViz wiring: a true-scale road renderer and the exposure gradient.
 
-from mesa.visualization import SolaraViz, make_plot_component, make_space_component
+Mesa's generic scatter view draws fixed-size screen dots, which mash together
+on a 1000 m axis and crash on an empty space, so the road view is custom: riders
+are bike-sized ellipses in road coordinates and the camera follows the bunch.
+"""
+
+import solara
+from matplotlib.figure import Figure
+from matplotlib.patches import Ellipse
+from mesa.visualization import SolaraViz, make_plot_component
 from mesa.visualization.user_param import Slider
+from mesa.visualization.utils import update_counter
 
 from peloton.model import PelotonModel
+
+_CAMERA_MARGIN = 10.0   # metres of road shown around the bunch
+_MIN_WINDOW = 60.0      # never zoom tighter than this many metres
 
 
 def exposure_to_color(exposure: float) -> tuple[float, float, float]:
@@ -12,12 +24,60 @@ def exposure_to_color(exposure: float) -> tuple[float, float, float]:
     return (e, 1.0 - e, 0.0)            # (r, g, b)
 
 
-def agent_portrayal(agent):
-    return {
-        "color": exposure_to_color(agent.exposure),
-        "size": 12,   # roughly a bike footprint at the default road scale
-        "marker": "o",
-    }
+def draw_road(model, ax):
+    """Render the road strip with riders at true physical scale.
+
+    Safe for an empty race: once every rider has finished, the full road is
+    shown with a banner instead of crashing on a zero-agent space.
+    """
+    cfg = model.config
+    agents = list(model.agents)
+
+    ax.axhspan(0.0, cfg.road_width, color="#9e9e9e")    # tarmac
+    ax.set_ylim(-1.0, cfg.road_width + 1.0)
+    ax.set_yticks([])
+    ax.set_xlabel("distance (m)")
+
+    if not agents:
+        ax.set_xlim(0.0, cfg.road_length)
+        ax.text(
+            0.5, 0.5, "race finished",
+            transform=ax.transAxes, ha="center", va="center", fontsize=14,
+        )
+        return
+
+    xs = [a.pos[0] for a in agents]
+    x_lo = min(xs) - _CAMERA_MARGIN
+    x_hi = max(xs) + _CAMERA_MARGIN
+    if x_hi - x_lo < _MIN_WINDOW:
+        pad = (_MIN_WINDOW - (x_hi - x_lo)) / 2
+        x_lo, x_hi = x_lo - pad, x_hi + pad
+    ax.set_xlim(x_lo, x_hi)
+
+    if x_lo <= cfg.road_length <= x_hi:
+        ax.axvline(cfg.road_length, color="black", linestyle="--", linewidth=1)
+
+    for agent in agents:
+        ax.add_patch(
+            Ellipse(
+                agent.pos,
+                width=cfg.rider_length,
+                height=cfg.rider_width,
+                facecolor=exposure_to_color(agent.exposure),
+                edgecolor="black",
+                linewidth=0.3,
+            )
+        )
+
+
+@solara.component
+def RoadView(model):
+    """Solara component wrapping :func:`draw_road`; re-renders every model step."""
+    update_counter.get()
+    fig = Figure(figsize=(10, 2.5))
+    ax = fig.add_subplot()
+    draw_road(model, ax)
+    solara.FigureMatplotlib(fig)
 
 
 model_params = {
@@ -39,6 +99,5 @@ def build_model(n_agents=30, n_teams=5, base_speed=12.0, draft_radius=3.0, confi
     )
 
 
-SpaceGraph = make_space_component(agent_portrayal)
 ExposurePlot = make_plot_component("MeanExposure")
 FinishedPlot = make_plot_component("Finished")
