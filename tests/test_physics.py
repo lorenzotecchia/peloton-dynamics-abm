@@ -64,3 +64,35 @@ def test_neighbors_ahead_empty_when_alone():
     me = _FakeAgent((100.0, 4.0))
     model = _FakeModel([me])
     assert neighbors_ahead(me, model, draft_radius=3.0, draft_lateral=1.0) == []
+
+
+from peloton.physics import exposure_for
+
+
+def test_exposure_is_one_when_alone():
+    me = _FakeAgent((100.0, 4.0))
+    model = _FakeModel([me])
+    assert exposure_for(me, model, draft_radius=3.0, draft_lateral=1.0) == 1.0
+
+
+def test_exposure_is_lower_when_tucked_close_behind():
+    me = _FakeAgent((100.0, 4.0))
+    close = _FakeAgent((100.2, 4.0))     # ~0.2 m behind a wheel -> strong shelter
+    model = _FakeModel([me, close])
+    exp = exposure_for(me, model, draft_radius=3.0, draft_lateral=1.0)
+    assert 0.0 <= exp < 0.5              # well sheltered
+
+
+def test_exposure_in_unit_interval_and_grows_with_gap():
+    me = _FakeAgent((100.0, 4.0))
+    far = _FakeAgent((102.8, 4.0))       # near edge of draft range -> little shelter
+    model_far = _FakeModel([me, far])
+    near = _FakeAgent((100.2, 4.0))
+    model_near = _FakeModel([me, near])
+
+    exp_far = exposure_for(me, model_far, draft_radius=3.0, draft_lateral=1.0)
+    exp_near = exposure_for(me, model_near, draft_radius=3.0, draft_lateral=1.0)
+
+    assert 0.0 <= exp_near <= 1.0
+    assert 0.0 <= exp_far <= 1.0
+    assert exp_far > exp_near            # bigger gap = more exposed
