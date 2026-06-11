@@ -15,7 +15,7 @@ def exposure_to_color(exposure: float) -> tuple[float, float, float]:
 def agent_portrayal(agent):
     return {
         "color": exposure_to_color(agent.exposure),
-        "size": 25,
+        "size": 12,   # roughly a bike footprint at the default road scale
         "marker": "o",
     }
 
