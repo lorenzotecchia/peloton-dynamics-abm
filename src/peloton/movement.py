@@ -10,6 +10,7 @@ from peloton.physics import exposure_for, overlaps
 
 # Candidate lateral nudges (metres) evaluated each step. 0.0 keeps the line.
 _LATERAL_CANDIDATES = (-0.6, -0.3, 0.0, 0.3, 0.6)
+_MAX_LATERAL = max(abs(c) for c in _LATERAL_CANDIDATES)
 
 # Max lateral jitter (m). Applied only when it keeps the no-overlap invariant.
 _JITTER = 0.09
@@ -36,8 +37,16 @@ def next_position(agent, model):
     x, y = agent.pos
 
     advance = cfg.base_speed + model.random.uniform(-cfg.speed_noise, cfg.speed_noise)
-    # Anyone who could block or shelter us is within this radius.
-    search_radius = advance + cfg.rider_length + cfg.rider_width
+    # Anyone who could collide with our final position is within this radius:
+    # forward reach + footprint length, plus max lateral shift + jitter + width.
+    # max(advance, 0) keeps the radius safe if speed_noise exceeds base_speed.
+    search_radius = (
+        max(advance, 0.0)
+        + cfg.rider_length
+        + _MAX_LATERAL
+        + _JITTER
+        + cfg.rider_width
+    )
     others = [
         o
         for o in model.space.get_neighbors(

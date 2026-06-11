@@ -90,7 +90,12 @@ class PelotonModel(Model):
         self.datacollector.collect(self)
 
     def _remove_finishers(self):
-        """Riders that crossed the line leave the road (and stop blocking it)."""
+        """Riders that crossed the line leave the road (and stop blocking it).
+
+        Same-step finishers are appended in agent-registration order, so ties in
+        ``finish_order`` carry no ranking — a sprint-finish model must resolve
+        them properly.
+        """
         for agent in list(self.agents):
             if agent.pos[0] >= self.config.road_length:
                 self.finish_order.append((agent.unique_id, self.steps))
