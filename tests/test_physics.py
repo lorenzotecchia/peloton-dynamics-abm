@@ -96,3 +96,20 @@ def test_exposure_in_unit_interval_and_grows_with_gap():
     assert 0.0 <= exp_near <= 1.0
     assert 0.0 <= exp_far <= 1.0
     assert exp_far > exp_near            # bigger gap = more exposed
+
+
+from peloton.physics import overlaps
+
+
+def test_overlaps_requires_both_axes_close():
+    kw = dict(rider_length=1.8, rider_width=0.6)
+    assert overlaps((10.0, 4.0), (11.0, 4.3), **kw)        # close on both axes
+    assert not overlaps((10.0, 4.0), (12.0, 4.3), **kw)    # far longitudinally
+    assert not overlaps((10.0, 4.0), (11.0, 4.7), **kw)    # far laterally
+    assert not overlaps((10.0, 4.0), (12.0, 4.7), **kw)    # far on both
+
+
+def test_overlaps_boundary_is_exclusive():
+    kw = dict(rider_length=1.8, rider_width=0.6)
+    assert not overlaps((10.0, 4.0), (11.8, 4.0), **kw)    # exactly one length apart
+    assert not overlaps((10.0, 4.0), (10.0, 4.6), **kw)    # exactly one width apart

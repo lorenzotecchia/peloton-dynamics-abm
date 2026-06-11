@@ -59,3 +59,16 @@ def exposure_for(agent, model, *, draft_radius: float, draft_lateral: float) -> 
     _CF_MIN = 0.62
     raw = (cf_draft(nearest_gap) - _CF_MIN) / (1.0 - _CF_MIN)
     return _clamp01(raw)
+
+
+def overlaps(pos_a, pos_b, *, rider_length: float, rider_width: float) -> bool:
+    """True when two riders' physical footprints intersect.
+
+    A rider occupies a rectangle ``rider_length`` long (x) and ``rider_width``
+    wide (y) centred on its position; two riders overlap when they are closer
+    than one footprint on BOTH axes. Boundaries are exclusive: exactly one
+    footprint apart is touching, not overlapping.
+    """
+    dx = round(abs(pos_a[0] - pos_b[0]), 10)
+    dy = round(abs(pos_a[1] - pos_b[1]), 10)
+    return dx < rider_length and dy < rider_width
