@@ -48,3 +48,10 @@ def test_model_accepts_keyword_overrides_for_viz():
     assert model.config.n_teams == 2
     assert model.config.base_speed == 10.0
     assert model.config.draft_radius == 2.5
+
+
+def test_resolve_config_preserves_rider_footprint():
+    base = PelotonConfig(rider_length=2.5, rider_width=0.9)
+    model = PelotonModel(config=base, n_agents=6)
+    assert model.config.rider_length == 2.5
+    assert model.config.rider_width == 0.9

@@ -13,4 +13,6 @@ class PelotonConfig:
     speed_noise: float = 0.5        # uniform +/- noise added to forward advance
     draft_radius: float = 3.0       # longitudinal draft range (README "same group" < 3 m)
     draft_lateral: float = 1.0      # lateral half-width of the draft cone
+    rider_length: float = 1.8       # longitudinal physical footprint (a bike)
+    rider_width: float = 0.6        # lateral physical footprint (shoulders)
     seed: int | None = None

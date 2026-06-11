@@ -60,6 +60,8 @@ class PelotonModel(Model):
             "speed_noise": base.speed_noise,
             "draft_radius": base.draft_radius,
             "draft_lateral": base.draft_lateral,
+            "rider_length": base.rider_length,
+            "rider_width": base.rider_width,
             "seed": base.seed,
         }
         for key, value in overrides.items():

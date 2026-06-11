@@ -17,3 +17,9 @@ def test_is_frozen():
     except Exception:
         raised = True
     assert raised, "PelotonConfig should be immutable (frozen)"
+
+
+def test_rider_footprint_defaults():
+    cfg = PelotonConfig()
+    assert cfg.rider_length > cfg.rider_width      # bikes are long and narrow
+    assert cfg.rider_width > 0
