@@ -21,15 +21,17 @@ def test_agents_advance_and_stay_in_road_bounds():
         assert 0.0 <= a.pos[1] <= cfg.road_width       # stays on the road laterally
 
 
-def test_finishers_are_counted_and_parked():
+def test_finishers_are_removed_and_counted():
     cfg = PelotonConfig(n_agents=10, n_teams=2, road_length=50.0,
                         base_speed=12.0, speed_noise=0.0, seed=3)
     model = PelotonModel(cfg)
-    for _ in range(10):                                # 10*12 = 120 m > 50 m road
+    for _ in range(10):
         model.step()
     assert model.n_finished == 10
-    for a in model.agents:
-        assert a.pos[0] >= cfg.road_length             # parked at/after the line
+    assert len(model.agents) == 0          # finishers leave the road
+    finished_ids = [uid for uid, _ in model.finish_order]
+    assert len(finished_ids) == 10
+    assert len(set(finished_ids)) == 10    # each rider finishes exactly once
 
 
 def test_datacollector_records_mean_exposure():
@@ -55,3 +57,24 @@ def test_resolve_config_preserves_rider_footprint():
     model = PelotonModel(config=base, n_agents=6)
     assert model.config.rider_length == 2.5
     assert model.config.rider_width == 0.9
+
+
+def test_no_two_riders_ever_overlap():
+    from peloton.physics import overlaps
+
+    cfg = PelotonConfig(n_agents=30, n_teams=5, road_length=400.0, seed=11)
+    model = PelotonModel(cfg)
+
+    def assert_no_overlaps(step_no):
+        agents = list(model.agents)
+        for i, a in enumerate(agents):
+            for b in agents[i + 1:]:
+                assert not overlaps(
+                    a.pos, b.pos,
+                    rider_length=cfg.rider_length, rider_width=cfg.rider_width,
+                ), f"step {step_no}: agents {a.unique_id} and {b.unique_id} overlap"
+
+    assert_no_overlaps(0)                  # spawn grid is overlap-free
+    for s in range(1, 16):
+        model.step()
+        assert_no_overlaps(s)

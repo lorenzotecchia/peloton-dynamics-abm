@@ -30,11 +30,21 @@ class PelotonModel(Model):
             config.road_length + 1e-6, config.road_width + 1e-6, torus=False
         )
 
-        # Spawn agents round-robin into teams, spread just behind the start line.
+        self.finish_order: list[tuple[int, int]] = []
+
+        # Spawn on a start grid with fixed clearance: non-overlapping by
+        # construction. Jitter stays strictly under half the clearance so it
+        # can never close the gap between neighbouring slots.
+        gap = 0.2
+        slot_w = config.rider_width + gap
+        slot_l = config.rider_length + gap
+        per_row = max(1, int(config.road_width // slot_w))
+        jitter = gap / 2 - 0.01
         for i in range(config.n_agents):
             agent = CyclistAgent(self, team_id=i % config.n_teams)
-            x = self.random.uniform(0.0, 5.0)               # small start spread
-            y = self.random.uniform(0.0, config.road_width)
+            row, col = divmod(i, per_row)
+            x = row * slot_l + self.random.uniform(0.0, jitter)
+            y = col * slot_w + slot_w / 2 + self.random.uniform(-jitter, jitter)
             self.space.place_agent(agent, (x, y))
 
         self.datacollector = DataCollector(
@@ -75,10 +85,15 @@ class PelotonModel(Model):
         return PelotonConfig(**fields)
 
     def step(self):
-        # Movement clamps forward position to road_length, so finishers simply pin
-        # at the line and never leave the space.
         self.agents.shuffle_do("step")
-        self.n_finished = sum(
-            1 for a in self.agents if a.pos[0] >= self.config.road_length
-        )
+        self._remove_finishers()
         self.datacollector.collect(self)
+
+    def _remove_finishers(self):
+        """Riders that crossed the line leave the road (and stop blocking it)."""
+        for agent in list(self.agents):
+            if agent.pos[0] >= self.config.road_length:
+                self.finish_order.append((agent.unique_id, self.steps))
+                self.space.remove_agent(agent)
+                agent.remove()
+        self.n_finished = len(self.finish_order)
