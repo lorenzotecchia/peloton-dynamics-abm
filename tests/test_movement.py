@@ -98,3 +98,13 @@ def test_lone_rider_still_advances_at_full_speed():
     model = _model_with([me], road_width=8.0, base_speed=12.0, speed_noise=0.0)
     new_x, _ = next_position(me, model)
     assert new_x == pytest.approx(112.0)
+
+
+def test_lone_rider_holds_its_line():
+    # No shelter anywhere and no blockers: every candidate ties on exposure and
+    # progress. The rider must keep its line (within jitter), not drift to the
+    # first-evaluated candidate and gutter along the road edge.
+    me = _FakeAgent((100.0, 4.0))
+    model = _model_with([me], road_width=8.0, base_speed=12.0, speed_noise=0.0)
+    _, new_y = next_position(me, model)
+    assert abs(new_y - 4.0) <= 0.09 + 1e-9       # only jitter, no lane drift

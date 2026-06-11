@@ -88,7 +88,10 @@ def next_position(agent, model):
             probe, model,
             draft_radius=cfg.draft_radius, draft_lateral=cfg.draft_lateral,
         )
-        key = (exposure, -(allowed_x - x))   # lowest exposure, then most progress
+        # Lowest exposure, then most progress, then hold your line: without the
+        # lateral tie-break, full ties always pick the first candidate (-0.6)
+        # and the whole field drifts into the road edge.
+        key = (exposure, -(allowed_x - x), abs(cand_y - y))
         if best_key is None or key < best_key:
             best_key = key
             best_x = allowed_x
