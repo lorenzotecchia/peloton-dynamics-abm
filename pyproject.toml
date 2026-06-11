@@ -1,9 +1,23 @@
 [project]
 name = "abm-project-src"
 version = "0.1.0"
-description = "Add your description here"
+description = "Agent-based model of a competitive cycling peloton"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "mesa>=3.5.1",
+    "solara",
+    "matplotlib",
+    "altair",
+    "networkx",
+    "numpy",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
