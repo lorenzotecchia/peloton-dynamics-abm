@@ -1,14 +1,18 @@
 """Placeholder rider motion: greedy shelter-seeking + forward advance.
 
-This is a heuristic stand-in. The strategy layer will eventually drive positioning
-(lead-outs, team tactics); for the MVP riders just tuck toward the lowest-exposure
-lateral spot near them.
+Riders are physical objects: they never overlap (rectangular footprint
+rider_length x rider_width) and brake to follow the wheel ahead instead of
+passing through. The shelter-seeking heuristic remains a stand-in for the
+future strategy layer; the no-overlap invariant, however, is permanent physics.
 """
 
-from peloton.physics import exposure_for
+from peloton.physics import exposure_for, overlaps
 
 # Candidate lateral nudges (metres) evaluated each step. 0.0 keeps the line.
 _LATERAL_CANDIDATES = (-0.6, -0.3, 0.0, 0.3, 0.6)
+
+# Max lateral jitter (m). Applied only when it keeps the no-overlap invariant.
+_JITTER = 0.09
 
 
 class _Probe:
@@ -21,34 +25,70 @@ class _Probe:
 
 
 def next_position(agent, model):
-    """Return the agent's next ``(x, y)`` position."""
+    """Return the agent's next ``(x, y)`` position (never overlapping anyone).
+
+    For each lateral candidate: discard it if the lane change itself would
+    overlap someone (staying in line is always feasible); brake so we never
+    advance past the wheel of the nearest rider ahead in that lane; then pick
+    the lowest-exposure candidate, tie-broken by most forward progress.
+    """
     cfg = model.config
     x, y = agent.pos
 
-    # Forward advance with uniform noise.
     advance = cfg.base_speed + model.random.uniform(-cfg.speed_noise, cfg.speed_noise)
-    # Never advance past the finish line; riders pin there once they arrive.
-    new_x = min(x + advance, cfg.road_length)
+    # Anyone who could block or shelter us is within this radius.
+    search_radius = advance + cfg.rider_length + cfg.rider_width
+    others = [
+        o
+        for o in model.space.get_neighbors(
+            agent.pos, radius=search_radius, include_center=True
+        )
+        if o is not agent
+    ]
 
-    # Greedy shelter-seeking: pick the candidate lateral offset with lowest exposure,
-    # evaluated at the CURRENT x against current neighbour positions.
+    def _hits_anyone(pos):
+        return any(
+            overlaps(
+                pos, o.pos,
+                rider_length=cfg.rider_length, rider_width=cfg.rider_width,
+            )
+            for o in others
+        )
+
+    best_key = None
+    best_x = x
     best_y = y
-    best_exposure = None
     for dy in _LATERAL_CANDIDATES:
         cand_y = min(max(y + dy, 0.0), cfg.road_width)
+
+        # Feasibility: the lane change itself must not overlap anyone.
+        # dy == 0 always survives because the current position is overlap-free.
+        if _hits_anyone((x, cand_y)):
+            continue
+
+        # Braking: never advance past the wheel of the nearest rider ahead in lane.
+        allowed_x = min(x + advance, cfg.road_length)
+        for o in others:
+            ox, oy = o.pos
+            if ox > x and abs(oy - cand_y) < cfg.rider_width:
+                allowed_x = min(allowed_x, ox - cfg.rider_length)
+        allowed_x = max(allowed_x, x)        # never forced backward
+
         probe = _Probe((x, cand_y))
-        exp = exposure_for(
-            probe,
-            model,
-            draft_radius=cfg.draft_radius,
-            draft_lateral=cfg.draft_lateral,
+        exposure = exposure_for(
+            probe, model,
+            draft_radius=cfg.draft_radius, draft_lateral=cfg.draft_lateral,
         )
-        if best_exposure is None or exp < best_exposure:
-            best_exposure = exp
+        key = (exposure, -(allowed_x - x))   # lowest exposure, then most progress
+        if best_key is None or key < best_key:
+            best_key = key
+            best_x = allowed_x
             best_y = cand_y
 
-    # Small lateral noise, then clamp into the road.
-    new_y = best_y + model.random.uniform(-0.1, 0.1)
-    new_y = min(max(new_y, 0.0), cfg.road_width)
+    # Cosmetic lateral jitter — applied only if it keeps the invariant.
+    jittered = best_y + model.random.uniform(-_JITTER, _JITTER)
+    jittered = min(max(jittered, 0.0), cfg.road_width)
+    if not _hits_anyone((best_x, jittered)):
+        best_y = jittered
 
-    return (new_x, new_y)
+    return (best_x, best_y)
