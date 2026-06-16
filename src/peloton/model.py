@@ -18,7 +18,11 @@ def _mean_exposure(model: "PelotonModel") -> float:
 class PelotonModel(Model):
     """A road full of cyclists that drift into drafting formations."""
 
-    def __init__(self, config: PelotonConfig | None = None, **overrides):
+    def __init__(self, config: PelotonConfig | None = None, *, scenario=None, **overrides):
+        # SolaraViz's reset injects a `scenario=` kwarg (Mesa's experimental
+        # scenarios feature). We don't use scenarios, so consume and ignore it
+        # here rather than let it reach _resolve_config, which strictly rejects
+        # unknown keys (that guard still catches genuine slider-name typos).
         config = self._resolve_config(config, overrides)
         super().__init__(seed=config.seed)
         self.config = config

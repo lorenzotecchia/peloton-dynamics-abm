@@ -52,6 +52,20 @@ def test_model_accepts_keyword_overrides_for_viz():
     assert model.config.draft_radius == 2.5
 
 
+def test_reset_with_injected_scenario_kwarg():
+    """SolaraViz's reset reconstructs the model with a ``scenario=`` kwarg (Mesa's
+    experimental scenarios feature). PelotonModel doesn't use scenarios, but the
+    constructor must not choke on the injected kwarg. Reproduces the reset-button
+    ``TypeError: Unknown model parameter: 'scenario'``.
+    """
+    model = PelotonModel(n_agents=10, n_teams=2)
+    # Mirror mesa.visualization.solara_viz.do_reset: the model's own scenario is
+    # passed back into a fresh instance alongside the slider params.
+    reset = PelotonModel(scenario=model.scenario, n_agents=15, n_teams=3)
+    assert len(reset.agents) == 15
+    assert reset.config.n_teams == 3
+
+
 def test_resolve_config_preserves_rider_footprint():
     base = PelotonConfig(rider_length=2.5, rider_width=0.9)
     model = PelotonModel(config=base, n_agents=6)
