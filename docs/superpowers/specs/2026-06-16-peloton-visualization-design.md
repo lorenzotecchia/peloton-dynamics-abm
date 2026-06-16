@@ -1,77 +1,105 @@
-# Peloton "Bullet-Hell" Visualization — Design
+# Peloton "Bullet-Hell" Road View — Design
 
 Date: 2026-06-16
 
 ## Goal
 
-Live visualization of the Mesa peloton model (`genAI/model.py`, `genAI/cyclist.py`):
-a scrolling 2D "road" that slides underneath the riders (bullet-hell style), plus a
-separate live matplotlib stats window. Mirrors the existing neural-CA split
-(`visualization/visualization.py` pygame view + `visualization/avalanche_view.py`
-matplotlib view).
+Upgrade the **existing** Solara road renderer (`src/peloton/viz.py`, `draw_road` /
+`RoadView`) into a scrolling "bullet-hell" view: a fixed-width window that follows
+the leader so the road appears to slide left underneath the riders and droppers
+fall off the back edge. Stay in the current Solara + matplotlib stack — no pygame,
+no new dependency. The live stat plots (`MeanExposure`, `Finished`) are kept as-is.
 
-## Model facts the viz relies on
+This targets the real model on the `lorenzo/mvp-attempt` branch, **not** the
+`genAI/` stub. The work branch (`lorenzo/visualization`) is based off `master` and
+does not contain `src/peloton`; the first task merges `lorenzo/mvp-attempt` in.
 
-- Riders ride +x toward `finish_x` (default 5000) on a strip of height `road_width` (10).
-- Each `Cyclist` exposes: `pos` (`np.array([x, y])`), `energy`, `group_id`,
-  `is_cooperating`, `speed`.
-- `CyclingRace` exposes: `agents`, `step()`, `road_width`, `finish_x`,
-  `detect_groups()`, and a Mesa `datacollector` reporting `MeanEnergy` and `PelotonSize`.
+## Model facts the view relies on (src/peloton, mvp-attempt)
 
-## Components
+- `PelotonModel` uses a Mesa `ContinuousSpace`; finished riders are removed, so the
+  agent set shrinks and can reach empty.
+- `model.config` (`PelotonConfig`): `road_length` (x_max, finish), `road_width`
+  (y_max), `n_teams`, `rider_length`, `rider_width`.
+- `CyclistAgent` exposes: `pos` (`(x, y)`), `team_id` (`0..n_teams-1`),
+  `exposure` (`0.0` sheltered → `1.0` exposed), `action` (stub, always `"ride"`),
+  `energy` (stub).
+- `model.datacollector` reports `MeanExposure` and `Finished`; `RoadView`,
+  `ExposurePlot = make_plot_component("MeanExposure")`, and
+  `FinishedPlot = make_plot_component("Finished")` already exist and are unchanged.
 
-### 1. `visualization/peloton_view.py` — pygame road view
+## The three changes to `draw_road`
 
-Horizontal road: race runs left→right, road scrolls left, leader pinned near the
-right edge.
+### 1. Follow-leader camera (replaces the symmetric bunch window)
 
-- **Camera (follow-leader):** `leader_x = max(rider.pos[0])`. World→screen:
-  `screen_x = right_margin - (leader_x - rider_x) * scale`. Leader sits near the
-  right edge; slower riders trail left; droppers slide off the left edge.
-  `road_width` maps to window height (`screen_y = rider_y / road_width * height`).
-- **Scrolling ground:** dashed lane markings drawn at world-x positions offset by
-  `leader_x` so the road appears to slide underneath. Finish line drawn once
-  `leader_x` nears `finish_x`.
-- **Rider glyph:**
-  - Color = `group_id`, via a fixed palette indexed by group id (recomputed each
-    step from `detect_groups`). Falls back to a default color if `group_id is None`.
-  - Filled circle if `is_cooperating`, hollow ring if free-riding.
-- **Controls:** Space = single step, Enter = run/stop, R = reset, Esc = quit.
-  Same scheme as `visualization.py`.
-- **Decoupling:** the renderer reads only the public interface listed above; no
-  Mesa internals.
+Current `draw_road` centers a window on the whole bunch (`min..max ± _CAMERA_MARGIN`,
+min width `_MIN_WINDOW`), so it zooms to fit everyone. Replace with a **fixed-width
+window pinned to the leader**:
 
-### 2. Live matplotlib stats
+- `leader_x = max(a.pos[0] for a in agents)`
+- `x_hi = leader_x + LEADER_MARGIN`
+- `x_lo = x_hi - CAMERA_WINDOW`
+- New module constants: `CAMERA_WINDOW = 120.0` (metres shown), `LEADER_MARGIN = 10.0`
+  (metres of road ahead of the leader).
 
-Reuse the dataclass pattern from `avalanche_view.py`. Two line plots redrawn every
-N steps (`update_interval`, default ~10):
+Consequence (intended): the leader sits near the right edge; riders more than
+`CAMERA_WINDOW - LEADER_MARGIN` metres behind the leader fall off the left edge.
+This is the bullet-hell feel and is a deliberate behaviour change from "whole bunch
+always visible". The finish line (`axvline` at `road_length`) stays, drawn only when
+`x_lo <= road_length <= x_hi`. The empty-race banner path is unchanged.
 
-- **MeanEnergy** over time
-- **PelotonSize** (largest group) over time
+### 2. Scrolling road texture
 
-Data pulled directly from `model.datacollector.get_model_vars_dataframe()` — Mesa
-already collects it, so no separate history list is kept in the view.
-`ponytail:` reads the dataframe each redraw; switch to incremental append only if the
-dataframe copy ever shows up as a hotspot.
+Draw a dashed centre line so motion is visible as the window scrolls:
 
-### 3. Entry point
+- Dashes at world-x positions `k * DASH_PITCH` for integer `k` such that the dash
+  lies within `[x_lo, x_hi]`, at `y = road_width / 2`, each dash `DASH_LEN` long.
+- Constants: `DASH_PITCH = 10.0`, `DASH_LEN = 4.0`.
+- Because dash x-positions are world coordinates and the window scrolls left, the
+  dashes visibly slide underneath the riders. Drawn with `ax.plot` segments (white,
+  thin) on top of the tarmac `axhspan`, beneath the riders.
 
-The `genAI/` model uses bare imports (`from cyclist import Cyclist`) and is not a
-package. Add a small `run` entry point that builds `CyclingRace`, creates both
-views, and drives the step loop (pygame loop calls `model.step()`, then both views'
-`update`). Run from inside `genAI/`, or convert `genAI/` into a package and fix the
-imports — decide at implementation time; default to the smaller change (run from
-inside the directory).
+### 3. Rider color: team hue + exposure brightness
+
+Replace `exposure_to_color` usage with `rider_color(team_id, n_teams, exposure)`:
+
+- Base hue from `team_id`: `hue = team_id / max(n_teams, 1)`.
+- Brightness (HSV value) from exposure: sheltered → darker, exposed → brighter,
+  e.g. `value = 0.45 + 0.55 * exposure`. Saturation fixed (e.g. `0.85`).
+- Convert with `colorsys.hsv_to_rgb` (stdlib). Returns an `(r, g, b)` in `[0, 1]`.
+
+Fill style is left ready for the future strategy layer: riders are drawn filled now
+(every `action` is `"ride"`). `ponytail:` one-line hook — when `action` gains
+`cooperate`/`defect`, switch free-riders to a hollow `facecolor="none"` ellipse.
+
+`exposure_to_color` is kept (still imported by `tests/test_viz.py`) but is no longer
+used by `draw_road`; `rider_color` is the new path.
+
+## Files
+
+- Modify: `src/peloton/viz.py` — add `CAMERA_WINDOW`, `LEADER_MARGIN`, `DASH_PITCH`,
+  `DASH_LEN`, `rider_color()`; rewrite the camera block and rider-drawing loop in
+  `draw_road`; add the dash-drawing block. `RoadView`, `model_params`, `build_model`,
+  the plot components, and `exposure_to_color` are untouched.
+- Modify: `tests/test_viz.py` — update the camera test to the leader-pinned
+  semantics; add `rider_color` tests. Keep the true-scale, empty-race, and
+  `exposure_to_color` tests.
 
 ## Out of scope (deferred)
 
-- Speed trails / motion streaks
-- Energy-based rider coloring (group color chosen instead)
-- Camera zoom/orbit controls
-- Centroid or zoom-to-fit camera modes
+- Pygame / standalone window (staying in Solara).
+- Energy-based coloring, speed trails, action-based fill (no live data yet — hook left).
+- New live plots beyond the existing `MeanExposure` / `Finished`.
 
 ## Testing
 
-- One runnable self-check on the world→screen camera transform: assert the leader
-  maps to the right margin and a rider `delta_x` behind maps `scale * delta_x` to its
-  left. Pure geometry, no pygame surface needed.
+Run: `uv run pytest tests/test_viz.py -v` (matplotlib `Agg` backend, as the existing
+tests already set).
+
+- **Camera (rewritten):** after stepping a long-road model, assert
+  `x_hi - x_lo == CAMERA_WINDOW`, the leader sits within `LEADER_MARGIN` of `x_hi`
+  (`x_hi - max(xs) == LEADER_MARGIN`), and the window does not show the whole road.
+- **rider_color:** different `team_id` gives different hue; higher exposure gives a
+  brighter (larger max channel) color than lower exposure for the same team; all
+  channels in `[0, 1]`.
+- **Preserved:** true-scale ellipse-per-rider, empty-race no-crash, `exposure_to_color`
+  channel/dominance tests still pass.
