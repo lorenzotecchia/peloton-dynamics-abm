@@ -5,6 +5,8 @@ on a 1000 m axis and crash on an empty space, so the road view is custom: riders
 are bike-sized ellipses in road coordinates and the camera follows the bunch.
 """
 
+import colorsys
+
 import solara
 from matplotlib.figure import Figure
 from matplotlib.patches import Ellipse
@@ -22,6 +24,18 @@ def exposure_to_color(exposure: float) -> tuple[float, float, float]:
     """Map exposure in [0, 1] to an RGB tuple: green (sheltered) -> red (exposed)."""
     e = max(0.0, min(1.0, exposure))
     return (e, 1.0 - e, 0.0)            # (r, g, b)
+
+
+def rider_color(team_id: int, n_teams: int, exposure: float) -> tuple[float, float, float]:
+    """Rider fill color: hue from team, brightness from wind exposure.
+
+    Hue is spread across teams so groups are distinguishable; HSV ``value`` rises
+    with exposure (sheltered riders are darker, exposed riders brighter), keeping
+    the drafting signal the model actually produces today.
+    """
+    hue = team_id / max(n_teams, 1)
+    value = 0.45 + 0.55 * max(0.0, min(1.0, exposure))
+    return colorsys.hsv_to_rgb(hue, 0.85, value)
 
 
 def draw_road(model, ax):

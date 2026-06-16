@@ -1,4 +1,4 @@
-from peloton.viz import exposure_to_color
+from peloton.viz import exposure_to_color, rider_color
 
 
 def test_full_shelter_is_green_ish():
@@ -14,6 +14,33 @@ def test_color_channels_in_unit_range():
         r, g, b = exposure_to_color(e)
         for c in (r, g, b):
             assert 0.0 <= c <= 1.0
+
+
+def test_rider_color_differs_by_team():
+    c0 = rider_color(team_id=0, n_teams=5, exposure=0.5)
+    c1 = rider_color(team_id=1, n_teams=5, exposure=0.5)
+    assert c0 != c1                                  # different hue per team
+
+
+def test_rider_color_brighter_when_exposed():
+    sheltered = rider_color(team_id=2, n_teams=5, exposure=0.0)
+    exposed = rider_color(team_id=2, n_teams=5, exposure=1.0)
+    assert max(exposed) > max(sheltered)             # exposed = brighter
+
+
+def test_rider_color_channels_in_unit_range():
+    for team in range(5):
+        for e in (0.0, 0.5, 1.0):
+            c = rider_color(team_id=team, n_teams=5, exposure=e)
+            assert len(c) == 3
+            for ch in c:
+                assert 0.0 <= ch <= 1.0
+
+
+def test_rider_color_handles_zero_teams():
+    c = rider_color(team_id=0, n_teams=0, exposure=0.5)   # must not divide by zero
+    for ch in c:
+        assert 0.0 <= ch <= 1.0
 
 
 def _ellipses(ax):
