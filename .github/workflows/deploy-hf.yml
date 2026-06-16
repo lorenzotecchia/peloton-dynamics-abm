@@ -1,0 +1,28 @@
+name: Deploy to Hugging Face Spaces
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:        # lets you trigger a deploy by hand from the Actions tab
+
+# HF deploy = force-push this repo to the Space's git remote. The Space rebuilds
+# from the Dockerfile on every push.
+env:
+  HF_USERNAME: YOUR_HF_USERNAME   # <-- edit once: your Hugging Face username
+  HF_SPACE: peloton-abm           # <-- edit if you named the Space differently
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # full history; HF wants a real git push
+          lfs: true
+      - name: Push to Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git push --force \
+            "https://${HF_USERNAME}:${HF_TOKEN}@huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE}" \
+            HEAD:main
