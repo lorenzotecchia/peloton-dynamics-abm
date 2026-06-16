@@ -74,7 +74,7 @@ def draw_road(model, ax):
                 agent.pos,
                 width=cfg.rider_length,
                 height=cfg.rider_width,
-                facecolor=exposure_to_color(agent.exposure),
+                facecolor=rider_color(agent.team_id, cfg.n_teams, agent.exposure),
                 edgecolor="black",
                 linewidth=0.3,
             )
