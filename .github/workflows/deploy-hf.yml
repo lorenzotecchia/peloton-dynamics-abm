@@ -8,8 +8,8 @@ on:
 # HF deploy = force-push this repo to the Space's git remote. The Space rebuilds
 # from the Dockerfile on every push.
 env:
-  HF_USERNAME: YOUR_HF_USERNAME   # <-- edit once: your Hugging Face username
-  HF_SPACE: peloton-abm           # <-- edit if you named the Space differently
+  HF_USERNAME: lorenzotecchia
+  HF_SPACE: peloton-abm           
 
 jobs:
   sync:
