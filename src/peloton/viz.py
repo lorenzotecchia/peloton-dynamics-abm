@@ -18,6 +18,8 @@ from peloton.model import PelotonModel
 
 CAMERA_WINDOW = 120.0   # metres of road visible at once (fixed-width follow window)
 LEADER_MARGIN = 10.0    # metres of road shown ahead of the leader
+DASH_PITCH = 10.0       # world-metres between dash starts on the centre line
+DASH_LEN = 4.0          # length of each centre-line dash (metres)
 
 
 def exposure_to_color(exposure: float) -> tuple[float, float, float]:
@@ -64,6 +66,20 @@ def draw_road(model, ax):
     x_hi = leader_x + LEADER_MARGIN
     x_lo = x_hi - CAMERA_WINDOW
     ax.set_xlim(x_lo, x_hi)
+
+    # Scrolling centre-line: dashes at fixed world-x positions. As the window
+    # follows the leader, they slide left under the riders.
+    y_mid = cfg.road_width / 2.0
+    import math
+    k0 = math.ceil(x_lo / DASH_PITCH)
+    k1 = math.floor(x_hi / DASH_PITCH)
+    for k in range(k0, k1 + 1):
+        dash_x = k * DASH_PITCH
+        ax.plot(
+            [dash_x, min(dash_x + DASH_LEN, x_hi)],
+            [y_mid, y_mid],
+            color="white", linewidth=1.0, solid_capstyle="butt",
+        )
 
     if x_lo <= cfg.road_length <= x_hi:
         ax.axvline(cfg.road_length, color="black", linestyle="--", linewidth=1)

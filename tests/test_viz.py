@@ -94,6 +94,37 @@ def test_draw_road_camera_follows_the_peloton():
     assert x_hi - x_lo < 2000.0                             # not the whole road
 
 
+def test_draw_road_draws_scrolling_dashes_in_window():
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from peloton.config import PelotonConfig
+    from peloton.model import PelotonModel
+    from peloton.viz import draw_road, DASH_PITCH
+
+    cfg = PelotonConfig(n_agents=15, n_teams=3, road_length=2000.0, seed=8)
+    model = PelotonModel(cfg)
+    for _ in range(15):
+        model.step()
+    _, ax = plt.subplots()
+    draw_road(model, ax)
+
+    x_lo, x_hi = ax.get_xlim()
+    y_mid = cfg.road_width / 2.0
+    # Each dash is a Line2D drawn along the centre line; at least one falls in-window.
+    centre_dashes = [
+        ln for ln in ax.lines
+        if len(ln.get_ydata()) and all(abs(y - y_mid) < 1e-6 for y in ln.get_ydata())
+    ]
+    assert centre_dashes, "expected dashed centre-line segments"
+    # Dashes are spaced one DASH_PITCH apart in world-x.
+    starts = sorted(ln.get_xdata()[0] for ln in centre_dashes)
+    assert all(x_lo - DASH_PITCH <= s <= x_hi for s in starts)
+    if len(starts) >= 2:
+        gaps = [round(b - a, 6) for a, b in zip(starts, starts[1:])]
+        assert all(g == round(DASH_PITCH, 6) for g in gaps)
+
+
 def test_draw_road_handles_empty_race_without_crashing():
     import matplotlib
     matplotlib.use("Agg")
