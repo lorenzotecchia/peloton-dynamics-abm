@@ -16,8 +16,8 @@ from mesa.visualization.utils import update_counter
 
 from peloton.model import PelotonModel
 
-_CAMERA_MARGIN = 10.0   # metres of road shown around the bunch
-_MIN_WINDOW = 60.0      # never zoom tighter than this many metres
+CAMERA_WINDOW = 120.0   # metres of road visible at once (fixed-width follow window)
+LEADER_MARGIN = 10.0    # metres of road shown ahead of the leader
 
 
 def exposure_to_color(exposure: float) -> tuple[float, float, float]:
@@ -60,12 +60,9 @@ def draw_road(model, ax):
         )
         return
 
-    xs = [a.pos[0] for a in agents]
-    x_lo = min(xs) - _CAMERA_MARGIN
-    x_hi = max(xs) + _CAMERA_MARGIN
-    if x_hi - x_lo < _MIN_WINDOW:
-        pad = (_MIN_WINDOW - (x_hi - x_lo)) / 2
-        x_lo, x_hi = x_lo - pad, x_hi + pad
+    leader_x = max(a.pos[0] for a in agents)
+    x_hi = leader_x + LEADER_MARGIN
+    x_lo = x_hi - CAMERA_WINDOW
     ax.set_xlim(x_lo, x_hi)
 
     if x_lo <= cfg.road_length <= x_hi:

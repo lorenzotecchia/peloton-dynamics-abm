@@ -72,7 +72,7 @@ def test_draw_road_camera_follows_the_peloton():
     import matplotlib.pyplot as plt
     from peloton.config import PelotonConfig
     from peloton.model import PelotonModel
-    from peloton.viz import draw_road
+    from peloton.viz import draw_road, CAMERA_WINDOW, LEADER_MARGIN
 
     cfg = PelotonConfig(n_agents=20, n_teams=4, road_length=2000.0, seed=6)
     model = PelotonModel(cfg)
@@ -80,10 +80,12 @@ def test_draw_road_camera_follows_the_peloton():
         model.step()
     _, ax = plt.subplots()
     draw_road(model, ax)
+
     xs = [a.pos[0] for a in model.agents]
     x_lo, x_hi = ax.get_xlim()
-    assert x_lo <= min(xs) and max(xs) <= x_hi     # whole bunch visible
-    assert x_hi - x_lo < 2000.0                    # but NOT the whole road
+    assert abs((x_hi - x_lo) - CAMERA_WINDOW) < 1e-6        # fixed-width window
+    assert abs(x_hi - (max(xs) + LEADER_MARGIN)) < 1e-6     # leader pinned near right
+    assert x_hi - x_lo < 2000.0                             # not the whole road
 
 
 def test_draw_road_handles_empty_race_without_crashing():
