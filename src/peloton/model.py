@@ -18,6 +18,27 @@ def _mean_exposure(model: "PelotonModel") -> float:
     return sum(a.exposure for a in agents) / len(agents)
 
 
+def _mean_stamina(model: "PelotonModel") -> float:
+    """Mean remaining anaerobic capacity W'/W_full across riders still racing."""
+    agents = list(model.agents)
+    if not agents:
+        return 0.0
+    return sum(a.w_prime / a.w_full for a in agents if a.w_full) / len(agents)
+
+
+def _num_groups(model: "PelotonModel") -> int:
+    """How many packs the field has fragmented into (1 = one bunch)."""
+    agents = list(model.agents)
+    if not agents:
+        return 0
+    return len(group.detect_groups(agents, model.config.group_radius))
+
+
+def _num_breakaways(model: "PelotonModel") -> int:
+    """Riders currently off the front on their own (or chasing a breakaway)."""
+    return sum(1 for a in model.agents if a.solo)
+
+
 def _exposure(cf_eff: float, cfg) -> float:
     """Map effective drag factor (draft_coefficient..1) to exposure (0..1) for the viz."""
     span = 1.0 - cfg.draft_coefficient
@@ -78,8 +99,10 @@ class PelotonModel(Model):
 
         self.datacollector = DataCollector(
             model_reporters={
-                "MeanExposure": _mean_exposure,
-                "Finished": lambda m: m.n_finished,
+                "MeanStamina": _mean_stamina,     # energy depletion over the race
+                "NumGroups": _num_groups,         # peloton fragmentation
+                "Breakaways": _num_breakaways,    # riders off the front
+                "MeanExposure": _mean_exposure,   # average drag factor (drafting depth)
             }
         )
         self.datacollector.collect(self)

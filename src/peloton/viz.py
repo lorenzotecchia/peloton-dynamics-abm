@@ -126,5 +126,6 @@ def build_model(n_agents=30, n_teams=5, k_s=0.8, group_radius=3.0, config=None):
     )
 
 
-ExposurePlot = make_plot_component("MeanExposure")
-FinishedPlot = make_plot_component("Finished")
+StaminaPlot = make_plot_component("MeanStamina")
+GroupsPlot = make_plot_component("NumGroups")
+BreakawaysPlot = make_plot_component("Breakaways")

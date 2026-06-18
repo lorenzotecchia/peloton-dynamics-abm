@@ -33,13 +33,15 @@ def test_finishers_are_removed_and_counted():
     assert len(set(finished_ids)) == 10    # each rider finishes exactly once
 
 
-def test_datacollector_records_mean_exposure():
+def test_datacollector_records_emergent_metrics():
     cfg = PelotonConfig(n_agents=15, n_teams=3, seed=4)
     model = PelotonModel(cfg)
     model.step()
     df = model.datacollector.get_model_vars_dataframe()
-    assert "MeanExposure" in df.columns
-    assert "Finished" in df.columns
+    for col in ("MeanStamina", "NumGroups", "Breakaways", "MeanExposure"):
+        assert col in df.columns
+    assert 0.0 <= df["MeanStamina"].iloc[-1] <= 1.0
+    assert df["NumGroups"].iloc[-1] >= 1                 # at least one pack while racing
     assert 0.0 <= df["MeanExposure"].iloc[-1] <= 1.0
 
 

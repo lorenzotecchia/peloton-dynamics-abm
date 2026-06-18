@@ -13,6 +13,7 @@ which is how distinct roles can emerge from a homogeneous start.
 
 import copy
 import math
+import statistics
 
 from peloton.model import PelotonModel
 
@@ -54,12 +55,30 @@ def evolve(agents, model) -> None:
                 a.coeffs[key][param] = snapshot[i][key][param] + cfg.learning_rate * delta + noise
 
 
+def _coeff_stats(riders) -> dict:
+    """Flat ``{key.param_mean, key.param_std}`` across riders.
+
+    Flat keys drop straight into a DataFrame; plotting the means per generation
+    shows whether coefficients converge, and the stds show how much the
+    population spreads into distinct roles.
+    """
+    stats = {}
+    for key, params in riders[0].coeffs.items():       # coop / leave / follow
+        for param in params:
+            vals = [r.coeffs[key][param] for r in riders]
+            stats[f"{key}.{param}_mean"] = statistics.mean(vals)
+            stats[f"{key}.{param}_std"] = statistics.pstdev(vals)
+    return stats
+
+
 def run_generations(n_generations: int, max_steps: int, config=None) -> list[dict]:
     """Run ``n_generations`` races in sequence, learning between them.
 
     Coefficients persist across races in ``population`` (one dict per spawn
     slot); each race is seeded from it and ``evolve`` writes the updates back.
-    Returns a per-generation history of summary stats.
+    Returns a per-generation history: ``n_finished`` plus the mean/std of every
+    coefficient *as it raced that generation* (so generation 0 is the initial
+    population, before any learning).
     """
     population: list[dict] | None = None
     history: list[dict] = []
@@ -71,9 +90,12 @@ def run_generations(n_generations: int, max_steps: int, config=None) -> list[dic
                 break
             model.step()
 
+        entry = {"generation": gen, "n_finished": model.n_finished}
+        entry.update(_coeff_stats(model.riders))       # coeffs that raced this generation
+        history.append(entry)
+
         evolve(model.riders, model)
         # Deep copy so the next generation's agents never alias each other's dicts.
         population = [copy.deepcopy(rider.coeffs) for rider in model.riders]
-        history.append({"generation": gen, "n_finished": model.n_finished})
 
     return history

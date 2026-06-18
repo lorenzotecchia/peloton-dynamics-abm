@@ -44,3 +44,15 @@ def test_run_generations_runs_and_returns_history():
     assert len(history) == 3
     assert [h["generation"] for h in history] == [0, 1, 2]
     assert all("n_finished" in h for h in history)
+
+
+def test_run_generations_records_coefficient_trajectories():
+    cfg = PelotonConfig(n_agents=8, n_teams=2, road_length=60.0, seed=0)
+    history = evolution.run_generations(n_generations=4, max_steps=80, config=cfg)
+    # Mean/std recorded for every coefficient, ready to plot for convergence.
+    assert "coop.delta_mean" in history[0]
+    assert "coop.delta_std" in history[0]
+    # Generation 0 is the untouched initial population: all riders share the
+    # default coeffs, so the spread is zero before any learning.
+    assert history[0]["coop.delta_std"] == 0.0
+    assert history[0]["coop.delta_mean"] == 1.0     # the default value
