@@ -3,12 +3,18 @@
 A single race is one model run. Learning happens *between* races: score each
 rider's outcome, then nudge their coefficients toward better-performing, similar
 riders. ``run_generations`` is the outer loop carrying a population of
-coefficients across races; ``evolve`` is the update rule (Francesca's notes):
+coefficients across races; ``evolve`` is the update rule (Francesca's notes,
+normalised for stability):
 
-    delta(theta_i) = eta * sum_j max(0, U_j - U_i) (theta_j - theta_i) sim(i, j) + noise
+    w_ij = max(0, U_j - U_i) * sim(i, j)
+    delta(theta_i) = eta * ( sum_j w_ij theta_j / sum_j w_ij  -  theta_i ) + noise
 
-so a rider imitates peers who did better *and* race like them (similar engine),
-which is how distinct roles can emerge from a homogeneous start.
+i.e. move a fraction ``eta`` of the way toward the similarity-weighted mean of
+the peers who did better. With eta <= 1 each update is a convex combination of
+current coefficients, so the population spread contracts rather than diverging
+(the raw unnormalised sum from the notes blows up: its step scales with peer
+count and utility magnitude). A rider still imitates peers who did better *and*
+race like them (similar engine), which is how distinct roles can emerge.
 """
 
 import copy
@@ -42,17 +48,22 @@ def evolve(agents, model) -> None:
     # Read coefficients from a frozen snapshot so updates don't feed back mid-pass.
     snapshot = [copy.deepcopy(a.coeffs) for a in agents]
     for i, a in enumerate(agents):
+        # Weights toward better-performing, similar peers (same for every coeff).
+        peers = [
+            (j, (b.utility - a.utility) * _similarity(a, b, cfg))
+            for j, b in enumerate(agents)
+            if j != i and b.utility > a.utility
+        ]
+        total_w = sum(w for _, w in peers)
         for key, params in a.coeffs.items():           # coop / leave / follow
             for param in params:
-                delta = 0.0
-                for j, b in enumerate(agents):
-                    advantage = b.utility - a.utility
-                    if j == i or advantage <= 0.0:
-                        continue
-                    pull = snapshot[j][key][param] - snapshot[i][key][param]
-                    delta += advantage * pull * _similarity(a, b, cfg)
-                noise = rng.gauss(0.0, cfg.evo_noise)
-                a.coeffs[key][param] = snapshot[i][key][param] + cfg.learning_rate * delta + noise
+                theta_i = snapshot[i][key][param]
+                if total_w > 0.0:
+                    mean_better = sum(w * snapshot[j][key][param] for j, w in peers) / total_w
+                    pull = mean_better - theta_i       # move toward the weighted mean
+                else:
+                    pull = 0.0                         # nobody did better: drift on noise only
+                a.coeffs[key][param] = theta_i + cfg.learning_rate * pull + rng.gauss(0.0, cfg.evo_noise)
 
 
 def _coeff_stats(riders) -> dict:

@@ -25,8 +25,19 @@ def test_evolve_pulls_loser_toward_similar_winner():
     # finish_order: winner then loser -> winner has higher utility.
     evolution.evolve([winner, loser], _fake_model([(0, 5), (1, 9)], cfg))
 
-    assert loser.coeffs["coop"]["alpha"] > 0.0          # moved toward winner's 2.0
+    # Normalised update: a fraction eta of the way toward the winner, no overshoot.
+    assert 0.0 < loser.coeffs["coop"]["alpha"] < 2.0
     assert winner.coeffs["coop"]["alpha"] == 2.0        # nobody better -> unchanged
+
+
+def test_evolution_does_not_diverge_over_many_generations():
+    cfg = PelotonConfig(n_agents=30, n_teams=5, road_length=300.0,
+                        evo_noise=0.0, seed=2)
+    history = evolution.run_generations(n_generations=30, max_steps=200, config=cfg)
+    # Convex-combination update + zero noise => coefficients stay bounded (the
+    # old unnormalised rule blew past 1e5 within ~8 generations).
+    assert abs(history[-1]["coop.delta_mean"]) < 10.0
+    assert history[-1]["coop.delta_std"] < 10.0
 
 
 def test_evolve_assigns_dnf_lowest_utility():
