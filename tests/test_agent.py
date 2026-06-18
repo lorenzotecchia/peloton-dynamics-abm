@@ -16,21 +16,28 @@ class _MiniModel(Model):
         )
 
 
-def test_agent_has_team_and_initial_state():
+def test_agent_has_team_and_default_strategy_state():
     model = _MiniModel()
     agent = CyclistAgent(model, team_id=2)
-    model.space.place_agent(agent, (0.0, 4.0))
     assert agent.team_id == 2
-    assert agent.exposure == 1.0       # no neighbours yet -> fully exposed
-    assert agent.action is None
-    assert isinstance(agent.energy, float)
+    assert agent.solo is False
+    assert agent.utility == 0.0
+    # Fresh agent carries an independent copy of the default coefficients.
+    assert set(agent.coeffs) == {"coop", "leave", "follow"}
+    assert agent.coeffs["coop"]["delta"] == 1.0
 
 
-def test_step_updates_exposure_action_and_advances_x():
+def test_agent_physiology_is_initialised_and_consistent():
     model = _MiniModel()
     agent = CyclistAgent(model, team_id=0)
-    model.space.place_agent(agent, (0.0, 4.0))
-    agent.step()
-    assert agent.action == "ride"
-    assert 0.0 <= agent.exposure <= 1.0
-    assert agent.pos[0] > 0.0          # advanced forward
+    assert agent.w_max10 >= 50.0                 # Gaussian floor holds
+    assert agent.s_m > agent.s_cp > 0.0          # threshold above critical speed
+    assert agent.cp == agent.w_max10 * model.config.cp_fraction
+    assert agent.w_prime == agent.w_full > 0.0   # starts fully charged
+
+
+def test_seeded_coeffs_are_used_when_provided():
+    model = _MiniModel()
+    seeded = {"coop": {"alpha": 5.0}}
+    agent = CyclistAgent(model, team_id=1, coeffs=seeded)
+    assert agent.coeffs is seeded

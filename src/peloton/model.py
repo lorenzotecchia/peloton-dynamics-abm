@@ -6,6 +6,7 @@ from mesa import Model
 from mesa.datacollection import DataCollector
 from mesa.space import ContinuousSpace
 
+from peloton import energy, group, strategy
 from peloton.agent import CyclistAgent
 from peloton.config import PelotonConfig
 
@@ -15,6 +16,14 @@ def _mean_exposure(model: "PelotonModel") -> float:
     if not agents:
         return 0.0
     return sum(a.exposure for a in agents) / len(agents)
+
+
+def _exposure(cf_eff: float, cfg) -> float:
+    """Map effective drag factor (draft_coefficient..1) to exposure (0..1) for the viz."""
+    span = 1.0 - cfg.draft_coefficient
+    if span <= 0.0:
+        return 1.0
+    return max(0.0, min(1.0, (cf_eff - cfg.draft_coefficient) / span))
 
 
 class PelotonModel(Model):
@@ -50,9 +59,8 @@ class PelotonModel(Model):
         # carry coefficients across races.
         self.riders: list[CyclistAgent] = []
 
-        # Spawn on a start grid with fixed clearance: non-overlapping by
-        # construction. Jitter stays strictly under half the clearance so it
-        # can never close the gap between neighbouring slots.
+        # Spawn on a start grid: just a tidy starting bunch (riders are points
+        # now, so overlap is irrelevant — this only spreads them for the viz).
         gap = 0.2
         slot_w = config.rider_width + gap
         slot_l = config.rider_length + gap
@@ -99,9 +107,45 @@ class PelotonModel(Model):
         return PelotonConfig(**values)
 
     def step(self):
-        self.agents.shuffle_do("step")
+        """Advance one ``dt``: detect packs, resolve breakaways, move everyone.
+
+        Packs are re-detected each step from current positions, so a rider that
+        escapes (or gets caught) regroups by geometry alone.
+        """
+        cfg = self.config
+        active = list(self.agents)
+        for members in group.detect_groups(active, cfg.group_radius):
+            self._advance_group(members, cfg)
         self._remove_finishers()
         self.datacollector.collect(self)
+
+    def _advance_group(self, members, cfg):
+        contribs = [strategy.contribution(m, members, cfg) for m in members]
+        v_group = group.group_speed(members, contribs, cfg)
+        cf = group.draft_factors(members, contribs, cfg)
+
+        # Breakaway, then teammates deciding whether to chase it.
+        broke = []
+        for m in members:
+            if not m.solo and self.random.random() < strategy.breakaway_prob(m, v_group, cfg):
+                m.solo = True
+                broke.append(m)
+        if broke:
+            for m in members:
+                if not m.solo and self.random.random() < strategy.follow_prob(m, broke, cfg):
+                    m.solo = True
+
+        for m, cf_pack in zip(members, cf):
+            if m.solo:
+                v, cf_eff = cfg.breakaway_speed_frac * m.s_m, 1.0   # alone in the wind
+            else:
+                v, cf_eff = v_group, cf_pack
+            energy.update_stamina(m, energy.power_required(v, cf_eff, cfg), cfg)
+            if m.w_prime <= 0.0:
+                v = min(v, m.s_cp)                 # exhausted: drop to sustainable speed
+            new_x = min(m.pos[0] + v * cfg.dt, cfg.road_length)
+            self.space.move_agent(m, (new_x, m.pos[1]))
+            m.exposure = _exposure(cf_eff, cfg)
 
     def _remove_finishers(self):
         """Riders that crossed the line leave the road (and stop blocking it).

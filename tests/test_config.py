@@ -5,8 +5,8 @@ def test_defaults_are_sane():
     cfg = PelotonConfig()
     assert cfg.road_length > cfg.road_width      # road is long and thin
     assert cfg.n_agents >= cfg.n_teams           # at least one rider per team
-    assert cfg.draft_radius > 0
-    assert cfg.draft_lateral > 0
+    assert cfg.group_radius > 0
+    assert 0.7 <= cfg.k_s <= 1.0                 # pack speed coefficient in range
 
 
 def test_is_frozen():

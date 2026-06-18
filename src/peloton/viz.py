@@ -110,19 +110,19 @@ def RoadView(model):
 model_params = {
     "n_agents": Slider("Number of riders", value=30, min=5, max=100, step=5),
     "n_teams": Slider("Number of teams", value=5, min=1, max=10, step=1),
-    "base_speed": Slider("Base speed", value=12.0, min=4.0, max=20.0, step=1.0),
-    "draft_radius": Slider("Draft radius (m)", value=3.0, min=1.0, max=6.0, step=0.5),
+    "k_s": Slider("Pack speed coeff", value=0.8, min=0.7, max=1.0, step=0.05),
+    "group_radius": Slider("Group radius (m)", value=3.0, min=1.0, max=6.0, step=0.5),
 }
 
 
-def build_model(n_agents=30, n_teams=5, base_speed=12.0, draft_radius=3.0, config=None):
+def build_model(n_agents=30, n_teams=5, k_s=0.8, group_radius=3.0, config=None):
     """Factory used for the standalone app launch."""
     return PelotonModel(
         config=config,
         n_agents=n_agents,
         n_teams=n_teams,
-        base_speed=base_speed,
-        draft_radius=draft_radius,
+        k_s=k_s,
+        group_radius=group_radius,
     )
 
 

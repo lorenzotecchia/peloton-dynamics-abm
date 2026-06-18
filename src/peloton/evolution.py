@@ -1,27 +1,57 @@
-"""STUB: across-race learning of game-theory coefficients.
+"""Across-race learning of the strategy coefficients.
 
-A single race is one model run. Learning happens *between* races: after a race
-finishes, score each rider's outcome, then nudge their coefficients toward the
-better performers. ``run_generations`` is the outer loop that carries a
-population of coefficients forward across races; ``evolve`` is the update rule.
+A single race is one model run. Learning happens *between* races: score each
+rider's outcome, then nudge their coefficients toward better-performing, similar
+riders. ``run_generations`` is the outer loop carrying a population of
+coefficients across races; ``evolve`` is the update rule (Francesca's notes):
 
-Both are inert for now. ``evolve`` is a no-op, so coefficients never change and
-every generation is an identical replicate — but the wiring (population ->
-model -> race -> score -> evolve -> population) exists for the real rule to
-drop into.
+    delta(theta_i) = eta * sum_j max(0, U_j - U_i) (theta_j - theta_i) sim(i, j) + noise
+
+so a rider imitates peers who did better *and* race like them (similar engine),
+which is how distinct roles can emerge from a homogeneous start.
 """
+
+import copy
+import math
 
 from peloton.model import PelotonModel
 
 
-def evolve(agents, model) -> None:
-    """Update each agent's ``coeffs`` from race outcomes. STUB: does nothing.
+def _assign_utilities(agents, model) -> None:
+    """Utility = finishing position (winner highest); DNF scores 0 (worst)."""
+    rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
+    n = len(agents)
+    for a in agents:
+        a.utility = (n - rank[a.unique_id]) if a.unique_id in rank else 0.0
 
-    Real version reads ``model.finish_order`` / ``agent.utility`` and shifts
-    each rider's coefficients toward better-performing, similar riders
-    (learning rate ``model.config.learning_rate``).
-    """
-    return None
+
+def _similarity(a, b, cfg) -> float:
+    """Gaussian on the engine difference. s_m is a monotone function of w_max10,
+    so w_max10 alone captures 'races like me' — no need to weight both."""
+    z = (a.w_max10 - b.w_max10) / (cfg.sim_scale * cfg.w_max10_std)
+    return math.exp(-0.5 * z * z)
+
+
+def evolve(agents, model) -> None:
+    """Update every agent's coefficients in place from this race's outcomes."""
+    cfg = model.config
+    rng = model.random
+    _assign_utilities(agents, model)
+
+    # Read coefficients from a frozen snapshot so updates don't feed back mid-pass.
+    snapshot = [copy.deepcopy(a.coeffs) for a in agents]
+    for i, a in enumerate(agents):
+        for key, params in a.coeffs.items():           # coop / leave / follow
+            for param in params:
+                delta = 0.0
+                for j, b in enumerate(agents):
+                    advantage = b.utility - a.utility
+                    if j == i or advantage <= 0.0:
+                        continue
+                    pull = snapshot[j][key][param] - snapshot[i][key][param]
+                    delta += advantage * pull * _similarity(a, b, cfg)
+                noise = rng.gauss(0.0, cfg.evo_noise)
+                a.coeffs[key][param] = snapshot[i][key][param] + cfg.learning_rate * delta + noise
 
 
 def run_generations(n_generations: int, max_steps: int, config=None) -> list[dict]:
@@ -42,9 +72,8 @@ def run_generations(n_generations: int, max_steps: int, config=None) -> list[dic
             model.step()
 
         evolve(model.riders, model)
-
-        # Carry this generation's coefficients into the next race.
-        population = [dict(rider.coeffs) for rider in model.riders]
+        # Deep copy so the next generation's agents never alias each other's dicts.
+        population = [copy.deepcopy(rider.coeffs) for rider in model.riders]
         history.append({"generation": gen, "n_finished": model.n_finished})
 
     return history

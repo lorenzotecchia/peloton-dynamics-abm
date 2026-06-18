@@ -133,10 +133,9 @@ def test_draw_road_handles_empty_race_without_crashing():
     from peloton.model import PelotonModel
     from peloton.viz import draw_road
 
-    cfg = PelotonConfig(n_agents=6, n_teams=2, road_length=40.0,
-                        base_speed=12.0, speed_noise=0.0, seed=7)
+    cfg = PelotonConfig(n_agents=6, n_teams=2, road_length=40.0, seed=7)
     model = PelotonModel(cfg)
-    for _ in range(8):
+    for _ in range(15):
         model.step()
     assert len(model.agents) == 0                  # race is over
     _, ax = plt.subplots()
