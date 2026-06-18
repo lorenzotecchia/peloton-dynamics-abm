@@ -1,5 +1,7 @@
 """The peloton model: space, agent spawning, stepping, and data collection."""
 
+from dataclasses import asdict
+
 from mesa import Model
 from mesa.datacollection import DataCollector
 from mesa.space import ContinuousSpace
@@ -18,11 +20,18 @@ def _mean_exposure(model: "PelotonModel") -> float:
 class PelotonModel(Model):
     """A road full of cyclists that drift into drafting formations."""
 
-    def __init__(self, config: PelotonConfig | None = None, *, scenario=None, **overrides):
+    def __init__(self, config: PelotonConfig | None = None, *, scenario=None, rng=None,
+                 population=None, **overrides):
         # SolaraViz's reset injects a `scenario=` kwarg (Mesa's experimental
         # scenarios feature). We don't use scenarios, so consume and ignore it
         # here rather than let it reach _resolve_config, which strictly rejects
         # unknown keys (that guard still catches genuine slider-name typos).
+        #
+        # mesa.batch_run injects a per-run seed under the kwarg name `rng`
+        # (it only uses `seed` if `seed` is already a parameter). Route it to
+        # our `seed` override so parallel replicates are reproducible.
+        if rng is not None:
+            overrides.setdefault("seed", rng)
         config = self._resolve_config(config, overrides)
         super().__init__(seed=config.seed)
         self.config = config
@@ -36,6 +45,11 @@ class PelotonModel(Model):
 
         self.finish_order: list[tuple[int, int]] = []
 
+        # Stable handle on every rider ever spawned, kept in spawn order and
+        # never pruned (model.agents drops finishers). Evolution reads this to
+        # carry coefficients across races.
+        self.riders: list[CyclistAgent] = []
+
         # Spawn on a start grid with fixed clearance: non-overlapping by
         # construction. Jitter stays strictly under half the clearance so it
         # can never close the gap between neighbouring slots.
@@ -45,7 +59,10 @@ class PelotonModel(Model):
         per_row = max(1, int(config.road_width // slot_w))
         jitter = gap / 2 - 0.01
         for i in range(config.n_agents):
-            agent = CyclistAgent(self, team_id=i % config.n_teams)
+            # Seed this rider's learned coefficients from the population, if any.
+            coeffs = population[i] if population is not None else None
+            agent = CyclistAgent(self, team_id=i % config.n_teams, coeffs=coeffs)
+            self.riders.append(agent)
             row, col = divmod(i, per_row)
             x = row * slot_l + self.random.uniform(0.0, jitter)
             y = col * slot_w + slot_w / 2 + self.random.uniform(-jitter, jitter)
@@ -61,32 +78,25 @@ class PelotonModel(Model):
 
     @staticmethod
     def _resolve_config(config: PelotonConfig | None, overrides: dict) -> PelotonConfig:
-        """Build a config, applying any keyword overrides (used by SolaraViz sliders)."""
+        """Build a config, applying any keyword overrides (used by SolaraViz sliders).
+
+        Field names and types are read straight off the dataclass, so adding a
+        knob to PelotonConfig makes it overridable here (and SA-targetable via
+        sweep.py) with no edit. Unknown keys still raise, catching slider typos.
+        """
         base = config or PelotonConfig()
         if not overrides:
             return base
-        fields = {
-            "road_length": base.road_length,
-            "road_width": base.road_width,
-            "n_agents": base.n_agents,
-            "n_teams": base.n_teams,
-            "base_speed": base.base_speed,
-            "speed_noise": base.speed_noise,
-            "draft_radius": base.draft_radius,
-            "draft_lateral": base.draft_lateral,
-            "rider_length": base.rider_length,
-            "rider_width": base.rider_width,
-            "seed": base.seed,
-        }
+        values = asdict(base)
         for key, value in overrides.items():
-            if key not in fields:
+            if key not in values:
                 raise TypeError(f"Unknown model parameter: {key!r}")
             if key in ("n_agents", "n_teams"):
                 value = int(value)
             elif key != "seed":
-                value = float(value)
-            fields[key] = value
-        return PelotonConfig(**fields)
+                value = float(value)  # every other knob is a float; seed passes through
+            values[key] = value
+        return PelotonConfig(**values)
 
     def step(self):
         self.agents.shuffle_do("step")
