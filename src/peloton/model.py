@@ -166,7 +166,8 @@ class PelotonModel(Model):
             energy.update_stamina(m, energy.power_required(v, cf_eff, cfg), cfg)
             if m.w_prime <= 0.0:
                 v = min(v, m.s_cp)                 # exhausted: drop to sustainable speed
-            v += group.cohesion_boost(m, all_active, cfg)
+            energy_frac = m.w_prime / m.w_full if m.w_full else 0.0
+            v += group.cohesion_boost(m, all_active, cfg) * energy_frac
             new_x = min(m.pos[0] + v * cfg.dt, cfg.road_length)
             self.space.move_agent(m, (new_x, m.pos[1]))
             m.exposure = _exposure(cf_eff, cfg)

@@ -66,9 +66,19 @@ def test_cohesion_boost_larger_when_centroid_farther_away():
     assert boost_far > boost_near
 
 
-def test_draft_factors_reward_the_bigger_contributor_with_more_wind():
-    a, b = _rider(0.0), _rider(1.0)
-    cf_a, cf_b = group.draft_factors([a, b], [0.9, 0.1], CFG)   # a leads most
-    assert cf_a > cf_b                                # leader sees more wind
+def test_draft_factors_physical_front_always_in_full_wind():
+    a, b = _rider(0.0), _rider(1.0)   # b is physically in front
+    # even with low contribution, b faces full wind because of position
+    cf_a, cf_b = group.draft_factors([a, b], [0.9, 0.1], CFG)
+    assert cf_b == pytest.approx(1.0)
+    assert cf_a < 1.0
+
+
+def test_draft_factors_higher_contribution_among_drafters_means_more_wind():
+    # Three riders: c is front and pinned to 1.0; among the drafters, a > b contribution.
+    a, b, c = _rider(0.0, s_m=12.0), _rider(1.0, s_m=12.0), _rider(2.0, s_m=12.0)
+    cf_a, cf_b, cf_c = group.draft_factors([a, b, c], [0.7, 0.2, 0.1], CFG)
+    assert cf_c == pytest.approx(1.0)   # physically front
+    assert cf_a > cf_b                  # a contributes more → more secondary wind
     for cf in (cf_a, cf_b):
-        assert CFG.draft_coefficient <= cf <= 1.0
+        assert CFG.draft_coefficient <= cf < 1.0

@@ -68,13 +68,18 @@ def cohesion_boost(rider, all_riders, cfg) -> float:
 def draft_factors(members, contribs, cfg) -> list[float]:
     """Per-rider effective air-drag factor cf_eff in [draft_coefficient, 1].
 
-    Returns a list aligned with ``members``. Leadership fraction = C_i / sum(C):
-    a rider spends that fraction of the step on the front in full wind (cf=1) and
-    the rest sheltered, so cf_eff = lead*1 + (1-lead)*draft_coefficient.
+    The physically-front rider (highest x) always faces full wind (cf=1.0) —
+    they cannot avoid it regardless of willingness to cooperate. The remaining
+    riders share wind exposure via contribution fractions, so a willing drafter
+    who is NOT at the front still takes some wind on behalf of the pack.
     """
+    front = max(range(len(members)), key=lambda i: members[i].pos[0])
     total_c = sum(contribs)
     out = []
-    for c in contribs:
+    for i, c in enumerate(contribs):
         lead = c / total_c if total_c > 0.0 else 1.0 / len(members)
-        out.append(lead + (1.0 - lead) * cfg.draft_coefficient)
+        cf = lead + (1.0 - lead) * cfg.draft_coefficient
+        if i == front:
+            cf = 1.0   # physical front always in full wind, regardless of contribution
+        out.append(cf)
     return out
