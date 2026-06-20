@@ -112,6 +112,7 @@ model_params = {
     "n_teams": Slider("Number of teams", value=5, min=1, max=10, step=1),
     "k_s": Slider("Pack speed coeff", value=0.8, min=0.7, max=1.0, step=0.05),
     "group_radius": Slider("Group radius (m)", value=3.0, min=1.0, max=6.0, step=0.5),
+    "cohesion_visibility": Slider("Cohesion visibility (m)", value=20.0, min=0.0, max=100.0, step=5.0),
 }
 
 

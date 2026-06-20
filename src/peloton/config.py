@@ -29,6 +29,9 @@ class PelotonConfig:
     draft_coefficient: float = 0.62 # air-power multiplier when fully sheltered (vs 1.0 leading)
     breakaway_speed_frac: float = 0.9  # solo speed of a breakaway = frac * s_m (Hoenigman)
 
+    # --- Mechanic cohesion (Boids-style clustering rule). ---
+    cohesion_visibility: float = 20.0  # metres ahead a rider can see when deciding to chase
+
     # --- Across-race evolution. ---
     learning_rate: float = 0.1      # eta: coefficient update step
     evo_noise: float = 0.01         # std of Gaussian noise added each generation

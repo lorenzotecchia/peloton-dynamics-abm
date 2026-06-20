@@ -44,6 +44,27 @@ def group_speed(members, contribs, cfg) -> float:
     return cfg.k_s * weighted / total_c
 
 
+def cohesion_boost(rider, all_riders, cfg) -> float:
+    """Mechanic cohesion: extra speed to chase riders visible ahead.
+
+    Looks at all riders within ``cohesion_visibility`` metres ahead on the
+    course (x-axis only). The centroid of that visible group determines the
+    weight w = d_relative / visibility in [0, 1]; the boost is w * s_m so a
+    rider far from the visible centroid (w→1) gets the largest pull, while
+    a rider already embedded in the cluster (w≈0) gets almost none.
+    """
+    vis = cfg.cohesion_visibility
+    x_r = rider.pos[0]
+    ahead = [r for r in all_riders if r is not rider and 0.0 < r.pos[0] - x_r <= vis]
+    if not ahead:
+        return 0.0
+    x_avg = sum(r.pos[0] for r in ahead) / len(ahead)
+    w = (x_avg - x_r) / vis
+    if w > 1.0:
+        return 0.0
+    return w * rider.s_m
+
+
 def draft_factors(members, contribs, cfg) -> list[float]:
     """Per-rider effective air-drag factor cf_eff in [draft_coefficient, 1].
 

@@ -138,11 +138,11 @@ class PelotonModel(Model):
         cfg = self.config
         active = list(self.agents)
         for members in group.detect_groups(active, cfg.group_radius):
-            self._advance_group(members, cfg)
+            self._advance_group(members, active, cfg)
         self._remove_finishers()
         self.datacollector.collect(self)
 
-    def _advance_group(self, members, cfg):
+    def _advance_group(self, members, all_active, cfg):
         contribs = [strategy.contribution(m, members, cfg) for m in members]
         v_group = group.group_speed(members, contribs, cfg)
         cf = group.draft_factors(members, contribs, cfg)
@@ -166,6 +166,7 @@ class PelotonModel(Model):
             energy.update_stamina(m, energy.power_required(v, cf_eff, cfg), cfg)
             if m.w_prime <= 0.0:
                 v = min(v, m.s_cp)                 # exhausted: drop to sustainable speed
+            v += group.cohesion_boost(m, all_active, cfg)
             new_x = min(m.pos[0] + v * cfg.dt, cfg.road_length)
             self.space.move_agent(m, (new_x, m.pos[1]))
             m.exposure = _exposure(cf_eff, cfg)
