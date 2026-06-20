@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Set up the Python runtime needed by run-all-tensorflow.py on Snellius.
+# Set up the Python runtime needed by the peloton batch runs on Snellius.
 #
 # Run this ONCE on a Snellius login node (e.g. snellius.surf.nl). It does NOT
 # train anything — training must be submitted through Slurm (sbatch), never on
@@ -11,8 +11,8 @@
 #      (requires-python >=3.10,<3.14).
 #   2. Installs `uv` to ~/.local/bin if it is not already on PATH.
 #   3. Runs `uv sync` in the project root to create .venv and install every
-#      pinned dependency from uv.lock (tensorflow, keras, numba, ...).
-#   4. Smoke-tests the venv by importing tensorflow and keras.
+#      pinned dependency from uv.lock (mesa, numpy, ...).
+#   4. Smoke-tests the venv by importing mesa and the peloton package.
 #
 # Usage:
 #   bash scripts/snellius-py-runtime-setup.sh
@@ -123,12 +123,14 @@ uv sync --python "$PYTHON_BIN"
 ############################################
 # 5. smoke test
 ############################################
-echo "[setup] Verifying that tensorflow and keras import cleanly ..."
+echo "[setup] Verifying that mesa and the peloton package import cleanly ..."
 uv run --python "$PYTHON_BIN" python - <<'PY'
 import sys
 print(f"python: {sys.version.split()[0]}")
-import numpy
-print(f"numpy:      {numpy.__version__}")
+import mesa
+print(f"mesa:       {mesa.__version__}")
+import peloton.sweep  # the batch-run entry point used by the Slurm jobs
+print("peloton:    import OK")
 PY
 
 echo
