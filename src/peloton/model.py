@@ -137,7 +137,9 @@ class PelotonModel(Model):
 
         To avoid recent breakaway members immediately rejoining their old pack
         we keep a short cooldown (break_cooldown) during which they are
-        processed separately.
+        processed separately. However, we only move each agent once per step,
+        so newly-broken agents are processed with the regular pack in this step,
+        then excluded from regular packs on subsequent steps until cooldown expires.
         """
         cfg = self.config
         active = list(self.agents)
@@ -149,16 +151,22 @@ class PelotonModel(Model):
                 if a.break_cooldown == 0:
                     a.solo = False
 
-        # First process agents eligible to be part of normal packs
+        # Process agents that are not in cooldown (either always-regular or just
+        # had their cooldown expire). Agents that break THIS step will get
+        # break_cooldown set here and will be excluded from regular packs NEXT step.
         eligible = [a for a in active if getattr(a, "break_cooldown", 0) == 0]
+        moved = set()
         for members in group.detect_groups(eligible, cfg.group_radius):
             self._advance_group(members, cfg)
+            moved.update(members)
 
-        # Then process recent breakers / chasers separately so they don't
-        # immediately merge back into the original pack by geometry alone.
-        recent = [a for a in active if getattr(a, "break_cooldown", 0) > 0]
-        for members in group.detect_groups(recent, cfg.group_radius):
+        # Process recent breakers (from previous steps) that haven't been moved yet.
+        # This is typically empty since agents break and are moved in the same step,
+        # but handles edge cases if grouping logic changes.
+        remaining = [a for a in active if a not in moved and getattr(a, "break_cooldown", 0) > 0]
+        for members in group.detect_groups(remaining, cfg.group_radius):
             self._advance_group(members, cfg)
+            moved.update(members)
 
         self._remove_finishers()
         self.datacollector.collect(self)
