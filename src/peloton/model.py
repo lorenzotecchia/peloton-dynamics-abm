@@ -219,7 +219,7 @@ class PelotonModel(Model):
 
             energy.update_stamina(m, energy.power_required(v, cf_eff, cfg), cfg)
             if m.w_prime <= 0.0:
-                v = min(v, m.s_cp)                 # exhausted: drop to sustainable speed
+                v = min(v, m.s_cp*0.75)                 # exhausted: drop to sustainable speed
             new_x = min(m.pos[0] + v * cfg.dt, cfg.road_length)
             self.space.move_agent(m, (new_x, m.pos[1]))
             m.exposure = _exposure(cf_eff, cfg)

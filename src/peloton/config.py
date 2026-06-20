@@ -18,7 +18,7 @@ class PelotonConfig:
     w_max10_std: float = 68.0       # ~17% spread weakest->strongest (Trenchard 2009)
     cp_fraction: float = 0.7        # critical power as fraction of W_max10 (lactate threshold)
     recovery_rate: float = 0.1      # r: stamina recovery multiplier below CP
-    k_aero: float = 0.18            # aerodynamic coefficient in P = k*cf*v^3 + c_roll*v
+    k_aero: float = 0.18*5            # aerodynamic coefficient in P = k*cf*v^3 + c_roll*v
     c_roll: float = 3.0             # rolling-resistance coefficient
     ref_speed_frac: float = 0.9     # v_hat = ref_speed_frac * s_m, for stamina init
     dt: float = 1.0                 # seconds of race per model step
