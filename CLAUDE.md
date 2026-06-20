@@ -56,3 +56,6 @@ Key physics constants to keep consistent:
 - Drafting reduces air resistance via `CF_draft = 0.62 - 0.0104·d_w + 0.0452·d_w²` (wheel-to-wheel distance in metres).
 - Riders are considered in the same group when within 3 m of each other.
 - Cooperation probability for rider *i* is parameterised as `σᵢ(αᵢ + βᵢ·d_finish + γᵢ·E_left)`; α/β/γ are the learned outputs, not sensitivity-analysis parameters.
+
+# Runtime Management
+- Use system-wide uv to manage local .venv python virtual environment.
