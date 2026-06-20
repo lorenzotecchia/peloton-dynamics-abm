@@ -25,6 +25,7 @@ class CyclistAgent(Agent):
         energy.init_physiology(self, cfg)
 
         self.coeffs = coeffs if coeffs is not None else strategy.default_coeffs(model.random)
-        self.solo = False        # True once broken away / following a breakaway
+        self.solo = False        # True while a rider is off the front / chasing a breakaway (cleared after cooldown)
+        self.break_cooldown = 0  # short-term memory to keep recent breakers separate from original packs
         self.exposure = 1.0      # cf_eff-derived wind exposure, for the viz
         self.utility = 0.0       # race-outcome score, read by evolution

@@ -134,11 +134,32 @@ class PelotonModel(Model):
 
         Packs are re-detected each step from current positions, so a rider that
         escapes (or gets caught) regroups by geometry alone.
+
+        To avoid recent breakaway members immediately rejoining their old pack
+        we keep a short cooldown (break_cooldown) during which they are
+        processed separately.
         """
         cfg = self.config
         active = list(self.agents)
-        for members in group.detect_groups(active, cfg.group_radius):
+
+        # Decrement short-term breakaway cooldowns and clear solo when expired
+        for a in active:
+            if getattr(a, "break_cooldown", 0) > 0:
+                a.break_cooldown -= 1
+                if a.break_cooldown == 0:
+                    a.solo = False
+
+        # First process agents eligible to be part of normal packs
+        eligible = [a for a in active if getattr(a, "break_cooldown", 0) == 0]
+        for members in group.detect_groups(eligible, cfg.group_radius):
             self._advance_group(members, cfg)
+
+        # Then process recent breakers / chasers separately so they don't
+        # immediately merge back into the original pack by geometry alone.
+        recent = [a for a in active if getattr(a, "break_cooldown", 0) > 0]
+        for members in group.detect_groups(recent, cfg.group_radius):
+            self._advance_group(members, cfg)
+
         self._remove_finishers()
         self.datacollector.collect(self)
 
@@ -147,22 +168,47 @@ class PelotonModel(Model):
         v_group = group.group_speed(members, contribs, cfg)
         cf = group.draft_factors(members, contribs, cfg)
 
-        # Breakaway, then teammates deciding whether to chase it.
+        # Breakaway, then teammates deciding whether to chase it. Use a
+        # short-lived cooldown so we can treat recent breakers as a separate
+        # set (possibly forming their own new pack) and avoid permanent solo
+        # tagging.
         broke = []
         for m in members:
-            if not m.solo and self.random.random() < strategy.breakaway_prob(m, v_group, cfg):
+            if getattr(m, "break_cooldown", 0) == 0 and not m.solo and self.random.random() < strategy.breakaway_prob(m, v_group, cfg):
                 m.solo = True
+                m.break_cooldown = cfg.breakaway_cooldown_steps
                 broke.append(m)
         if broke:
             for m in members:
-                if not m.solo and self.random.random() < strategy.follow_prob(m, broke, cfg):
+                if m not in broke and getattr(m, "break_cooldown", 0) == 0 and not m.solo and self.random.random() < strategy.follow_prob(m, broke, cfg):
                     m.solo = True
+                    m.break_cooldown = cfg.breakaway_cooldown_steps
+
+        # If multiple riders broke simultaneously, treat them as a new pack for
+        # the purposes of speed/drafting for this timestep.
+        if broke and len(broke) > 1:
+            contribs_broke = [strategy.contribution(m, broke, cfg) for m in broke]
+            v_broke = group.group_speed(broke, contribs_broke, cfg)
+            cf_broke = group.draft_factors(broke, contribs_broke, cfg)
+        else:
+            v_broke = None
+            cf_broke = []
 
         for m, cf_pack in zip(members, cf):
-            if m.solo:
-                v, cf_eff = cfg.breakaway_speed_frac * m.s_m, 1.0   # alone in the wind
+            if m in broke:
+                if v_broke is not None:
+                    # collective breakaway speed with drafting among breakers
+                    idx = broke.index(m)
+                    v, cf_eff = v_broke, cf_broke[idx]
+                else:
+                    # single rider breakaway: exposed to full wind
+                    v, cf_eff = cfg.breakaway_speed_frac * m.s_m, 1.0
+            elif m.solo:
+                # chasers / solo riders (no drafting)
+                v, cf_eff = cfg.breakaway_speed_frac * m.s_m, 1.0
             else:
                 v, cf_eff = v_group, cf_pack
+
             energy.update_stamina(m, energy.power_required(v, cf_eff, cfg), cfg)
             if m.w_prime <= 0.0:
                 v = min(v, m.s_cp)                 # exhausted: drop to sustainable speed
