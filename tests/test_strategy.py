@@ -1,3 +1,4 @@
+import random
 import types
 
 
@@ -10,7 +11,11 @@ CFG = PelotonConfig(road_length=1000.0)
 def _rider(x=0.0, team=0, w_prime=500.0, w_full=1000.0, s_m=12.0, coeffs=None):
     return types.SimpleNamespace(
         pos=(x, 0.0), team_id=team, w_prime=w_prime, w_full=w_full, s_m=s_m,
-        coeffs=coeffs or strategy.default_coeffs(),
+        coeffs=coeffs or {
+            "coop":   {"alpha": 0.0, "beta": 0.0, "gamma": 0.3, "delta": 1.0},
+            "leave":  {"alpha": -2.0, "beta": 0.0, "gamma": 0.5, "delta": 1.0},
+            "follow": {"alpha": -1.0, "beta": 0.0, "gamma": 1.0, "delta": 1.0},
+        },
     )
 
 
@@ -21,10 +26,17 @@ def test_sigmoid_is_stable_at_extreme_inputs():
     assert strategy.sigmoid(0.0) == 0.5
 
 
-def test_default_coeffs_are_independent_copies():
-    a, b = strategy.default_coeffs(), strategy.default_coeffs()
-    a["coop"]["alpha"] = 99.0
-    assert b["coop"]["alpha"] == 0.0          # not aliased
+def test_default_coeffs_are_independent_draws():
+    rng = random.Random(1)
+    a = strategy.default_coeffs(rng)
+    b = strategy.default_coeffs(rng)
+    assert a != b
+
+
+def test_default_coeffs_are_reproducible_with_seeded_rng():
+    a = strategy.default_coeffs(random.Random(2))
+    b = strategy.default_coeffs(random.Random(2))
+    assert a == b
 
 
 def test_contribution_in_unit_interval_and_rises_with_energy():
