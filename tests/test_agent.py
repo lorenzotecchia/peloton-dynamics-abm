@@ -30,10 +30,10 @@ def test_agent_has_team_and_default_strategy_state():
 def test_agent_physiology_is_initialised_and_consistent():
     model = _MiniModel()
     agent = CyclistAgent(model, team_id=0)
-    assert agent.w_max10 >= 50.0                 # Gaussian floor holds
-    assert agent.s_m > agent.s_cp > 0.0          # threshold above critical speed
+    assert agent.w_max10 >= 50.0  # Gaussian floor holds
+    assert agent.s_m > agent.s_cp > 0.0  # threshold above critical speed
     assert agent.cp == agent.w_max10 * model.config.cp_fraction
-    assert agent.w_prime == agent.w_full > 0.0   # starts fully charged
+    assert agent.w_prime == agent.w_full > 0.0  # starts fully charged
 
 
 def test_seeded_coeffs_are_used_when_provided():

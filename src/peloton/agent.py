@@ -1,6 +1,6 @@
 """The cyclist agent: physiological + strategic state.
 
-Behaviour (grouping, drafting, pace, breakaways) is orchestrated pack-wise by
+Behaviour (grouping, drafting, breakaways) is orchestrated pack-wise by
 ``PelotonModel.step`` — a single rider can't decide a pack's speed alone — so the
 agent itself only holds state.
 """
@@ -25,6 +25,7 @@ class CyclistAgent(Agent):
         energy.init_physiology(self, cfg)
 
         self.coeffs = coeffs if coeffs is not None else strategy.default_coeffs()
-        self.solo = False        # True once broken away / following a breakaway
-        self.exposure = 1.0      # cf_eff-derived wind exposure, for the viz
-        self.utility = 0.0       # race-outcome score, read by evolution
+        self.solo = False  # True once broken away / following a breakaway
+        self.solo_since = None  # step number when went solo (for time-based rejoin)
+        self.exposure = 1.0  # cf_eff-derived wind exposure, for the viz
+        self.utility = 0.0  # race-outcome score, read by evolution

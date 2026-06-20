@@ -50,8 +50,15 @@ def _exposure(cf_eff: float, cfg) -> float:
 class PelotonModel(Model):
     """A road full of cyclists that drift into drafting formations."""
 
-    def __init__(self, config: PelotonConfig | None = None, *, scenario=None, rng=None,
-                 population=None, **overrides):
+    def __init__(
+        self,
+        config: PelotonConfig | None = None,
+        *,
+        scenario=None,
+        rng=None,
+        population=None,
+        **overrides,
+    ):
         # SolaraViz's reset injects a `scenario=` kwarg (Mesa's experimental
         # scenarios feature). We don't use scenarios, so consume and ignore it
         # here rather than let it reach _resolve_config, which strictly rejects
@@ -99,10 +106,10 @@ class PelotonModel(Model):
 
         self.datacollector = DataCollector(
             model_reporters={
-                "MeanStamina": _mean_stamina,     # energy depletion over the race
-                "NumGroups": _num_groups,         # peloton fragmentation
-                "Breakaways": _num_breakaways,    # riders off the front
-                "MeanExposure": _mean_exposure,   # average drag factor (drafting depth)
+                "MeanStamina": _mean_stamina,  # energy depletion over the race
+                "NumGroups": _num_groups,  # peloton fragmentation
+                "Breakaways": _num_breakaways,  # riders off the front
+                "MeanExposure": _mean_exposure,  # average drag factor (drafting depth)
             }
         )
         self.datacollector.collect(self)
@@ -150,22 +157,36 @@ class PelotonModel(Model):
         # Breakaway, then teammates deciding whether to chase it.
         broke = []
         for m in members:
-            if not m.solo and self.random.random() < strategy.breakaway_prob(m, v_group, cfg):
+            if not m.solo and self.random.random() < strategy.breakaway_prob(
+                m, v_group, cfg
+            ):
                 m.solo = True
+                m.solo_since = self.steps
                 broke.append(m)
         if broke:
             for m in members:
-                if not m.solo and self.random.random() < strategy.follow_prob(m, broke, cfg):
+                if not m.solo and self.random.random() < strategy.follow_prob(
+                    m, broke, cfg
+                ):
                     m.solo = True
+                    m.solo_since = self.steps
+
+        # Riders can rejoin after solo_min_steps have passed.
+        for m in members:
+            if m.solo and m.solo_since is not None:
+                if self.steps - m.solo_since >= cfg.solo_min_steps:
+                    m.solo = False
+                    m.solo_since = None
 
         for m, cf_pack in zip(members, cf):
             if m.solo:
-                v, cf_eff = cfg.breakaway_speed_frac * m.s_m, 1.0   # alone in the wind
+                v = cfg.breakaway_speed_frac * m.s_m
+                cf_eff = 1.0
             else:
                 v, cf_eff = v_group, cf_pack
             energy.update_stamina(m, energy.power_required(v, cf_eff, cfg), cfg)
             if m.w_prime <= 0.0:
-                v = min(v, m.s_cp)                 # exhausted: drop to sustainable speed
+                v = min(v, m.s_cp)  # exhausted: drop to sustainable speed
             new_x = min(m.pos[0] + v * cfg.dt, cfg.road_length)
             self.space.move_agent(m, (new_x, m.pos[1]))
             m.exposure = _exposure(cf_eff, cfg)
@@ -184,4 +205,4 @@ class PelotonModel(Model):
                 agent.remove()
         self.n_finished = len(self.finish_order)
         if not len(self.agents):
-            self.running = False        # race over: stop the viz autoplay
+            self.running = False  # race over: stop the viz autoplay

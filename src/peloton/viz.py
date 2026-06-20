@@ -16,19 +16,21 @@ from mesa.visualization.utils import update_counter
 
 from peloton.model import PelotonModel
 
-CAMERA_WINDOW = 120.0   # metres of road visible at once (fixed-width follow window)
-LEADER_MARGIN = 10.0    # metres of road shown ahead of the leader
-DASH_PITCH = 10.0       # world-metres between dash starts on the centre line
-DASH_LEN = 4.0          # length of each centre-line dash (metres)
+CAMERA_WINDOW = 120.0  # metres of road visible at once (fixed-width follow window)
+LEADER_MARGIN = 10.0  # metres of road shown ahead of the leader
+DASH_PITCH = 10.0  # world-metres between dash starts on the centre line
+DASH_LEN = 4.0  # length of each centre-line dash (metres)
 
 
 def exposure_to_color(exposure: float) -> tuple[float, float, float]:
     """Map exposure in [0, 1] to an RGB tuple: green (sheltered) -> red (exposed)."""
     e = max(0.0, min(1.0, exposure))
-    return (e, 1.0 - e, 0.0)            # (r, g, b)
+    return (e, 1.0 - e, 0.0)  # (r, g, b)
 
 
-def rider_color(team_id: int, n_teams: int, exposure: float) -> tuple[float, float, float]:
+def rider_color(
+    team_id: int, n_teams: int, exposure: float
+) -> tuple[float, float, float]:
     """Rider fill color: hue from team, brightness from wind exposure.
 
     Hue is spread across teams so groups are distinguishable; HSV ``value`` rises
@@ -49,7 +51,7 @@ def draw_road(model, ax):
     cfg = model.config
     agents = list(model.agents)
 
-    ax.axhspan(0.0, cfg.road_width, color="#9e9e9e")    # tarmac
+    ax.axhspan(0.0, cfg.road_width, color="#9e9e9e")  # tarmac
     ax.set_ylim(-1.0, cfg.road_width + 1.0)
     ax.set_yticks([])
     ax.set_xlabel("distance (m)")
@@ -57,8 +59,13 @@ def draw_road(model, ax):
     if not agents:
         ax.set_xlim(0.0, cfg.road_length)
         ax.text(
-            0.5, 0.5, "race finished",
-            transform=ax.transAxes, ha="center", va="center", fontsize=14,
+            0.5,
+            0.5,
+            "race finished",
+            transform=ax.transAxes,
+            ha="center",
+            va="center",
+            fontsize=14,
         )
         return
 
@@ -71,6 +78,7 @@ def draw_road(model, ax):
     # follows the leader, they slide left under the riders.
     y_mid = cfg.road_width / 2.0
     import math
+
     k0 = math.ceil(x_lo / DASH_PITCH)
     k1 = math.floor(x_hi / DASH_PITCH)
     for k in range(k0, k1 + 1):
@@ -78,7 +86,9 @@ def draw_road(model, ax):
         ax.plot(
             [dash_x, min(dash_x + DASH_LEN, x_hi)],
             [y_mid, y_mid],
-            color="white", linewidth=1.0, solid_capstyle="butt",
+            color="white",
+            linewidth=1.0,
+            solid_capstyle="butt",
         )
 
     if x_lo <= cfg.road_length <= x_hi:

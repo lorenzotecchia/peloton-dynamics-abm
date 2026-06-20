@@ -13,8 +13,8 @@ import math
 # delta = energy fraction. Mildly cooperative riders that defend a breakaway
 # more readily when fresh and near the finish.
 DEFAULT_COEFFS = {
-    "coop":   {"alpha": 0.0, "beta": 0.0, "gamma": 0.3, "delta": 1.0},
-    "leave":  {"alpha": -2.0, "beta": 0.0, "gamma": 0.5, "delta": 1.0},
+    "coop": {"alpha": 0.0, "beta": 0.0, "gamma": 0.3, "delta": 0.5},
+    "leave": {"alpha": -2.0, "beta": -0.5, "gamma": -0.5, "delta": 0.0},
     "follow": {"alpha": -1.0, "beta": 0.0, "gamma": 1.0, "delta": 1.0},
 }
 

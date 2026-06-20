@@ -25,7 +25,7 @@ def solo_speed(power: float, cfg, cf_eff: float = 1.0) -> float:
     """
     if power <= 0.0:
         return 0.0
-    v = (power / (cfg.k_aero * cf_eff)) ** (1.0 / 3.0)   # air-only seed
+    v = (power / (cfg.k_aero * cf_eff)) ** (1.0 / 3.0)  # air-only seed
     for _ in range(20):
         f = cfg.k_aero * cf_eff * v**3 + cfg.c_roll * v - power
         fp = 3.0 * cfg.k_aero * cf_eff * v**2 + cfg.c_roll
@@ -47,7 +47,9 @@ def initial_stamina(w_max10: float, cp: float, cfg) -> float:
     below CP there is no anaerobic draw to measure).
     """
     s_m = solo_speed(w_max10, cfg)
-    v_hat = cfg.ref_speed_frac * s_m
+    # v_hat = cfg.ref_speed_frac * s_m
+    v_hat = s_m
+
     p_req = power_required(v_hat, 1.0, cfg)
     t_lim = math.exp(-6.351 * math.log(p_req / w_max10) + 2.478)
     return max((p_req - cp) * t_lim, 0.0)
@@ -56,8 +58,8 @@ def initial_stamina(w_max10: float, cp: float, cfg) -> float:
 def init_physiology(agent, cfg) -> None:
     """Fill an agent's derived physiology from its ``w_max10`` (set at spawn)."""
     agent.cp = critical_power(agent.w_max10, cfg)
-    agent.s_m = solo_speed(agent.w_max10, cfg)          # speed at W_max10 (leading)
-    agent.s_cp = solo_speed(agent.cp, cfg)              # sustainable (critical) speed
+    agent.s_m = solo_speed(agent.w_max10, cfg)  # speed at W_max10 (leading)
+    agent.s_cp = solo_speed(agent.cp, cfg)  # sustainable (critical) speed
     agent.w_full = initial_stamina(agent.w_max10, agent.cp, cfg)
     agent.w_prime = agent.w_full
 

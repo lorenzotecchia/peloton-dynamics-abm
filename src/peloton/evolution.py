@@ -25,11 +25,28 @@ from peloton.model import PelotonModel
 
 
 def _assign_utilities(agents, model) -> None:
-    """Utility = finishing position (winner highest); DNF scores 0 (worst)."""
+    """Utility decays exponentially by finishing position; DNF = 0."""
     rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
-    n = len(agents)
+
+    decay = 0.4  # smaller -> steeper decay
+
+    if not model.finish_order:
+        return None  # nessun vincitore
+
+    winner_uid = model.finish_order[0][0]
+
+    winner = next((a for a in agents if a.unique_id == winner_uid), None)
+
+    team_winner = winner.team_id
+
     for a in agents:
-        a.utility = (n - rank[a.unique_id]) if a.unique_id in rank else 0.0
+        if a.unique_id in rank:
+            pos = rank[a.unique_id]
+            a.utility = 2 * math.exp(-decay * pos)
+        else:
+            a.utility = 0.0
+        if a.team_id == team_winner:
+            a.utility += 1.0
 
 
 def _similarity(a, b, cfg) -> float:
@@ -55,15 +72,19 @@ def evolve(agents, model) -> None:
             if j != i and b.utility > a.utility
         ]
         total_w = sum(w for _, w in peers)
-        for key, params in a.coeffs.items():           # coop / leave / follow
+        for key, params in a.coeffs.items():  # coop / leave / follow
             for param in params:
                 theta_i = snapshot[i][key][param]
                 if total_w > 0.0:
-                    mean_better = sum(w * snapshot[j][key][param] for j, w in peers) / total_w
-                    pull = mean_better - theta_i       # move toward the weighted mean
+                    mean_better = (
+                        sum(w * snapshot[j][key][param] for j, w in peers) / total_w
+                    )
+                    pull = mean_better - theta_i  # move toward the weighted mean
                 else:
-                    pull = 0.0                         # nobody did better: drift on noise only
-                a.coeffs[key][param] = theta_i + cfg.learning_rate * pull + rng.gauss(0.0, cfg.evo_noise)
+                    pull = 0.0  # nobody did better: drift on noise only
+                a.coeffs[key][param] = (
+                    theta_i + cfg.learning_rate * pull + rng.gauss(0.0, cfg.evo_noise)
+                )
 
 
 def _coeff_stats(riders) -> dict:
@@ -74,7 +95,7 @@ def _coeff_stats(riders) -> dict:
     population spreads into distinct roles.
     """
     stats = {}
-    for key, params in riders[0].coeffs.items():       # coop / leave / follow
+    for key, params in riders[0].coeffs.items():  # coop / leave / follow
         for param in params:
             vals = [r.coeffs[key][param] for r in riders]
             stats[f"{key}.{param}_mean"] = statistics.mean(vals)
@@ -102,7 +123,7 @@ def run_generations(n_generations: int, max_steps: int, config=None) -> list[dic
             model.step()
 
         entry = {"generation": gen, "n_finished": model.n_finished}
-        entry.update(_coeff_stats(model.riders))       # coeffs that raced this generation
+        entry.update(_coeff_stats(model.riders))  # coeffs that raced this generation
         history.append(entry)
 
         evolve(model.riders, model)
