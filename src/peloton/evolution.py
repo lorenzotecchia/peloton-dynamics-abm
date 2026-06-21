@@ -30,23 +30,24 @@ def _assign_utilities(agents, model) -> None:
 
     decay = 0.4  # smaller -> steeper decay
 
-    if not model.finish_order:
-        return None  # nessun vincitore
-
-    winner_uid = model.finish_order[0][0]
-
-    winner = next((a for a in agents if a.unique_id == winner_uid), None)
-
-    team_winner = winner.team_id
+    individual_utility = {}
 
     for a in agents:
         if a.unique_id in rank:
             pos = rank[a.unique_id]
-            a.utility = 2 * math.exp(-decay * pos)
+            individual_utility[a.unique_id] = 2 * math.exp(-decay * pos)
         else:
-            a.utility = 0.0
-        if a.team_id == team_winner:
-            a.utility += 1.0
+            individual_utility[a.unique_id] = 0.0
+
+    # sum of team utilities 
+    team_utility = defaultdict(float)
+
+    for a in agents:
+        team_utility[a.team_id] += individual_utility[a.unique_id]
+
+    # each agent of a team has utility equal to the sum of ranking-points of the team memebrs
+    for a in agents:
+        a.utility = team_utility[a.team_id]
 
 
 def _similarity(a, b, cfg) -> float:
