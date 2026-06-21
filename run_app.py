@@ -14,7 +14,21 @@ from peloton.viz import (
     model_params,
 )
 
-model = build_model()
+import os
+import json
+
+# If a trained population was saved by the learning run, load it and pass it
+# to the model so the Solara app visualizes that exact population.
+population = None
+pop_path = "population.json"
+if os.path.exists(pop_path):
+    try:
+        with open(pop_path) as fh:
+            population = json.load(fh)
+    except Exception:
+        population = None
+
+model = build_model(population=population)
 
 page = SolaraViz(
     model,

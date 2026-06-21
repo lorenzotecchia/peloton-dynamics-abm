@@ -31,12 +31,24 @@ def run_headless(max_steps: int) -> None:
 
 
 def run_learning(generations: int, max_steps: int, seed: int | None, out: str) -> None:
-    """Run the across-race learning loop and dump the per-generation trajectory."""
-    import pandas as pd
+    """Run the across-race learning loop and dump the per-generation trajectory.
 
-    history = run_generations(generations, max_steps, PelotonConfig(seed=seed))
+    Also write the final population (per-rider coefficient dicts) to
+    ``population.json`` so the last trained population can be reloaded for
+    visualization with the `solara` command.
+    """
+    import pandas as pd
+    import json
+
+    history, population = run_generations(generations, max_steps, PelotonConfig(seed=seed))
     pd.DataFrame(history).to_csv(out, index=False)
     print(f"Ran {generations} generations; wrote coefficient trajectory to {out}.")
+
+    if population is not None:
+        with open("population.json", "w") as fh:
+            json.dump(population, fh, indent=2)
+        print("Wrote final population to population.json")
+
     first, last = history[0], history[-1]
     print(f"  coop.delta mean: {first['coop.delta_mean']:.3f} -> {last['coop.delta_mean']:.3f}"
           f"  (std {first['coop.delta_std']:.3f} -> {last['coop.delta_std']:.3f})")

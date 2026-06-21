@@ -115,14 +115,19 @@ model_params = {
 }
 
 
-def build_model(n_agents=30, n_teams=5, k_s=0.8, group_radius=3.0, config=None):
-    """Factory used for the standalone app launch."""
+def build_model(n_agents=30, n_teams=5, k_s=0.8, group_radius=3.0, config=None, population=None):
+    """Factory used for the standalone app launch.
+
+    Accepts an optional ``population`` (list of per-rider coefficient dicts) so
+    a trained population saved to disk can be visualized.
+    """
     return PelotonModel(
         config=config,
         n_agents=n_agents,
         n_teams=n_teams,
         k_s=k_s,
         group_radius=group_radius,
+        population=population,
     )
 
 
