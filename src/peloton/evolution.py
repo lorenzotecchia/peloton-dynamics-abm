@@ -20,14 +20,14 @@ race like them (similar engine), which is how distinct roles can emerge.
 import copy
 import math
 import statistics
+import numpy as np
 
 from peloton.model import PelotonModel
 
 
-def _assign_utilities(agents, model) -> None:
+def _assign_utilities(agents, model, cfg) -> None:
     """Utility decays exponentially by finishing position; DNF = 0."""
     rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
-
     decay = 0.4  # smaller -> steeper decay
 
     individual_utility = {}
@@ -39,8 +39,8 @@ def _assign_utilities(agents, model) -> None:
         else:
             individual_utility[a.unique_id] = 0.0
 
-    # sum of team utilities 
-    team_utility = defaultdict(float)
+    # sum of team utilities
+    team_utility = np.zeros(cfg.n_teams)
 
     for a in agents:
         team_utility[a.team_id] += individual_utility[a.unique_id]
@@ -61,7 +61,7 @@ def evolve(agents, model) -> None:
     """Update every agent's coefficients in place from this race's outcomes."""
     cfg = model.config
     rng = model.random
-    _assign_utilities(agents, model)
+    _assign_utilities(agents, model, cfg)
 
     # Read coefficients from a frozen snapshot so updates don't feed back mid-pass.
     snapshot = [copy.deepcopy(a.coeffs) for a in agents]
