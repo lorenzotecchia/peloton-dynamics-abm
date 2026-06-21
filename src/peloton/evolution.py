@@ -24,13 +24,34 @@ import statistics
 from peloton.model import PelotonModel
 
 
-def _assign_utilities(agents, model) -> None:
-    """Utility = finishing position (winner highest); DNF scores 0 (worst)."""
-    rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
-    n = len(agents)
-    for a in agents:
-        a.utility = (n - rank[a.unique_id]) if a.unique_id in rank else 0.0
+# def _assign_utilities(agents, model) -> None:
+#     """Utility = finishing position (winner highest); DNF scores 0 (worst)."""
+#     rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
+#     n = len(agents)
+#     for a in agents:
+#         a.utility = (n - rank[a.unique_id]) if a.unique_id in rank else 0.0
 
+def _assign_utilities(agents, model) -> None:
+    """Utility decays exponentially by finishing position; DNF = 0."""
+    rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
+
+    decay = 0.4  # smaller -> steeper decay
+
+    if not model.finish_order:
+        return None  # nessun vincitore
+
+    winner_uid = model.finish_order[0][0]
+    winner = next((a for a in agents if a.unique_id == winner_uid), None)
+    team_winner = winner.team_id
+
+    for a in agents:
+        if a.unique_id in rank:
+            pos = rank[a.unique_id]
+            a.utility = 2 * math.exp(-decay * pos)
+        else:
+            a.utility = 0.0
+        if a.team_id == team_winner:
+            a.utility += 0.0
 
 def _similarity(a, b, cfg) -> float:
     """Gaussian on the engine difference. s_m is a monotone function of w_max10,
@@ -44,26 +65,54 @@ def evolve(agents, model) -> None:
     cfg = model.config
     rng = model.random
     _assign_utilities(agents, model)
+    # New rule: a fraction of the worst riders copy/blend coefficients from
+    # high-performing donors. Donor selection uses stochastic acceptance
+    # (roulette-wheel) restricted to the top fraction. This drops the old
+    # similarity-weighted pull in favor of a simpler imitation mechanic.
+    n = len(agents)
+    if n == 0:
+        return
 
-    # Read coefficients from a frozen snapshot so updates don't feed back mid-pass.
     snapshot = [copy.deepcopy(a.coeffs) for a in agents]
-    for i, a in enumerate(agents):
-        # Weights toward better-performing, similar peers (same for every coeff).
-        peers = [
-            (j, (b.utility - a.utility) * _similarity(a, b, cfg))
-            for j, b in enumerate(agents)
-            if j != i and b.utility > a.utility
-        ]
-        total_w = sum(w for _, w in peers)
-        for key, params in a.coeffs.items():           # coop / leave / follow
+
+    # Determine donor / recipient sets by utility ranking
+    idxs = sorted(range(n), key=lambda i: agents[i].utility, reverse=True)
+    top_count = max(1, int(cfg.evo_top_frac * n))
+    bottom_count = max(1, int(cfg.evo_bottom_frac * n))
+    donor_idxs = idxs[:top_count]
+    recipient_idxs = idxs[-bottom_count:]
+
+    # Remove any accidental overlap (can happen for very small n)
+    donor_set = set(donor_idxs)
+    recipient_idxs = [i for i in recipient_idxs if i not in donor_set]
+    if not recipient_idxs:
+        return
+
+    donors = [(j, agents[j]) for j in donor_idxs]
+
+    def _roulette_pick(donor_list):
+        # stochastic acceptance: pick uniformly then accept with prob w/max_w
+        weights = [max(0.0, d.utility) for _, d in donor_list]
+        max_w = max(weights) if weights else 0.0
+        if max_w <= 0.0:
+            return rng.choice(donor_list)[0]
+        while True:
+            j, d = rng.choice(donor_list)
+            w = max(0.0, d.utility)
+            if rng.random() < (w / max_w):
+                return j
+
+    mu = getattr(cfg, "imitation_mu", 1.0)
+
+    for i in recipient_idxs:
+        a = agents[i]
+        donor_j = _roulette_pick(donors)
+        for key, params in a.coeffs.items():
             for param in params:
                 theta_i = snapshot[i][key][param]
-                if total_w > 0.0:
-                    mean_better = sum(w * snapshot[j][key][param] for j, w in peers) / total_w
-                    pull = mean_better - theta_i       # move toward the weighted mean
-                else:
-                    pull = 0.0                         # nobody did better: drift on noise only
-                a.coeffs[key][param] = theta_i + cfg.learning_rate * pull + rng.gauss(0.0, cfg.evo_noise)
+                theta_d = snapshot[donor_j][key][param]
+                # Blend toward donor and add small Gaussian mutation
+                a.coeffs[key][param] = (1 - mu) * theta_i + mu * theta_d + rng.gauss(0.0, cfg.evo_noise)
 
 
 def _coeff_stats(riders) -> dict:
@@ -82,6 +131,25 @@ def _coeff_stats(riders) -> dict:
     return stats
 
 
+def _utility_stats(riders) -> dict:
+    """Utility statistics: mean, std, min, max across riders after a race.
+    
+    Captures how spread out performance was and whether learning improves
+    the average population utility (better strategy -> higher utility).
+    """
+    utilities = [r.utility for r in riders]
+    if not utilities:
+        return {}
+    
+    return {
+        "utility_mean": statistics.mean(utilities),
+        "utility_std": statistics.pstdev(utilities) if len(utilities) > 1 else 0.0,
+        "utility_min": min(utilities),
+        "utility_max": max(utilities),
+        "utility_range": max(utilities) - min(utilities),
+    }
+
+
 def run_generations(n_generations: int, max_steps: int, config=None) -> list[dict]:
     """Run ``n_generations`` races in sequence, learning between them.
 
@@ -89,7 +157,7 @@ def run_generations(n_generations: int, max_steps: int, config=None) -> list[dic
     slot); each race is seeded from it and ``evolve`` writes the updates back.
     Returns a per-generation history: ``n_finished`` plus the mean/std of every
     coefficient *as it raced that generation* (so generation 0 is the initial
-    population, before any learning).
+    population, before any learning), plus performance metrics (utilities).
     """
     population: list[dict] | None = None
     history: list[dict] = []
@@ -103,9 +171,12 @@ def run_generations(n_generations: int, max_steps: int, config=None) -> list[dic
 
         entry = {"generation": gen, "n_finished": model.n_finished}
         entry.update(_coeff_stats(model.riders))       # coeffs that raced this generation
+        
+        # Call evolve, which assigns utilities internally and updates coefficients
+        evolve(model.riders, model)
+        entry.update(_utility_stats(model.riders))     # performance metrics after race
         history.append(entry)
 
-        evolve(model.riders, model)
         # Deep copy so the next generation's agents never alias each other's dicts.
         population = [copy.deepcopy(rider.coeffs) for rider in model.riders]
 

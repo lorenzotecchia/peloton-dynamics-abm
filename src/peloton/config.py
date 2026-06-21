@@ -34,3 +34,8 @@ class PelotonConfig:
     learning_rate: float = 0.1      # eta: coefficient update step
     evo_noise: float = 0.01         # std of Gaussian noise added each generation
     sim_scale: float = 1.0          # rider-similarity bandwidth (in std units)
+    # --- Imitation-style evolution parameters (used by new evolution rule).
+    evo_bottom_frac: float = 0.2    # fraction of worst riders to update each generation
+    evo_top_frac: float = 0.1       # fraction of top riders used as donors
+    imitation_mu: float = 0.75      # blend fraction toward donor (1.0 = full copy)
+    elite_fraction: float = 0.0     # fraction of top riders preserved unchanged
