@@ -20,7 +20,7 @@ from mesa import batch_run
 from peloton.model import PelotonModel
 
 # ponytail: empty = pure replicates. SA later fills this with utility knobs, e.g.
-# {"k_s": [0.7, 0.8, 0.9], "draft_coefficient": [0.5, 0.62, 0.75], "learning_rate": [0.05, 0.1]}.
+# {"k_s": [0.8, 0.9, 1.0], "draft_coefficient": [0.5, 0.62, 0.75], "evo_noise": [0.05, 0.1]}.
 PARAMETERS: dict = {}
 
 

@@ -131,7 +131,7 @@ class PelotonModel(Model):
         for key, value in overrides.items():
             if key not in values:
                 raise TypeError(f"Unknown model parameter: {key!r}")
-            if key in ("n_agents", "n_teams"):
+            if key in ("n_agents", "n_teams", "evo_replicates"):
                 value = int(value)
             elif key != "seed":
                 value = float(value)  # every other knob is a float; seed passes through
@@ -154,14 +154,16 @@ class PelotonModel(Model):
         self.datacollector.collect(self)
 
     def _advance_group(self, members, cfg):
-        # Refresh each rider's sustainable-to-finish speed (drives pack speed and
-        # the attack decision). cf=1 is the conservative solo ceiling.
-        for m in members:
-            energy.update_sustain_speed(m, cfg)
-
         efforts = [strategy.effort(m, members, cfg) for m in members]
-        v_group = group.group_speed(members, efforts, cfg)
         cf = group.draft_factors(members, efforts, cfg)
+
+        # Each rider's sustainable-to-finish speed at ITS draft factor: sheltered
+        # riders (low cf_eff) can sustain a higher pace, so a drafting pack rolls
+        # faster than a soloist (cf=1) — the real reason to sit in. Pack speed is
+        # the effort-weighted average of these draft-adjusted speeds.
+        for m, cfm in zip(members, cf):
+            energy.update_sustain_speed(m, cfg, cfm)
+        v_group = group.group_speed(members, efforts, cfg)
 
         # Solo status is geometric, decided fresh each step:
         #  - a lone rider always rides solo (full wind, no k_s pack penalty);

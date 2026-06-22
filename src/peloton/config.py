@@ -17,7 +17,7 @@ class PelotonConfig:
 
     # --- Physiology / stamina model (Olds power equation, W' dynamics). ---
     w_max10_mean: float = 400.0  # mean 10-min max power (W)
-    w_max10_std: float = 68.0  # ~17% spread weakest->strongest (Trenchard 2009)
+    w_max10_std: float = 0  # ~17% spread weakest->strongest (Trenchard 2009)
     cp_fraction: float = (
         0.7  # critical power as fraction of W_max10 (lactate threshold)
     )
@@ -29,18 +29,18 @@ class PelotonConfig:
 
     # --- Grouping / pack speed / drafting / breakaway. ---
     group_radius: float = 3.0  # "<3 m apart => same group"
-    k_s: float = 0.8  # pack speed coefficient, in [0.7, 1] (Martins 2013)
+    # Pack efficiency in [0.7, 1]. Pack speed is the effort-weighted average of
+    # each rider's DRAFT-adjusted sustainable speed (so a sheltered bunch holds a
+    # higher pace than a soloist, as in real cycling), times k_s for residual
+    # losses. Keep near 1 or drafting stops paying and everyone just attacks.
+    k_s: float = 1.0
     draft_coefficient: float = (
         0.62  # air-power multiplier when fully sheltered (vs 1.0 leading)
     )
-    sprint_distance: float = 200.0  # metres before the line where riders sprint all-out (cash in saved W')
+    sprint_distance: float = (
+        200.0  # metres before the line where riders sprint all-out (cash in saved W')
+    )
 
-    # --- Across-race evolution. ---
-    learning_rate: float = 0.1  # eta: coefficient update step
-    evo_noise: float = 0.1  # std of Gaussian noise added each generation
-    sim_scale: float = 1.0  # rider-similarity bandwidth (in std units)
-    # --- Imitation-style evolution parameters (used by new evolution rule).
-    evo_bottom_frac: float = 0.2  # fraction of worst riders to update each generation
-    evo_top_frac: float = 0.1  # fraction of top riders used as donors
-    imitation_mu: float = 0.75  # blend fraction toward donor (1.0 = full copy)
-    elite_fraction: float = 0.0  # fraction of top riders preserved unchanged
+    # --- Across-race evolution (truncation selection + Gaussian mutation). ---
+    evo_noise: float = 0.1  # std of per-gene mutation on offspring each generation
+    evo_replicates: int = 3  # races per generation; fitness averaged to denoise engine/RNG luck

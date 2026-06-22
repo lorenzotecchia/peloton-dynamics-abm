@@ -30,17 +30,21 @@ def run_headless(max_steps: int) -> None:
         print(f"  {rank:>2}. rider {unique_id} (step {step})")
 
 
-def run_learning(generations: int, max_steps: int, seed: int | None, out: str) -> None:
+def run_learning(generations: int, max_steps: int, seed: int | None, out: str, teams: int) -> None:
     """Run the across-race learning loop and dump the per-generation trajectory.
 
     Also write the final population (per-rider coefficient dicts) to
     ``population.json`` so the last trained population can be reloaded for
     visualization with the `solara` command.
+
+    ``teams`` must be > 1: with a single team the team-sum utility is identical
+    for every rider, so there is no fitness variance and nothing to select on.
     """
     import pandas as pd
     import json
 
-    history, population = run_generations(generations, max_steps, PelotonConfig(seed=seed))
+    cfg = PelotonConfig(seed=seed, n_teams=teams)
+    history, population = run_generations(generations, max_steps, cfg)
     pd.DataFrame(history).to_csv(out, index=False)
     print(f"Ran {generations} generations; wrote coefficient trajectory to {out}.")
 
@@ -86,6 +90,8 @@ def main() -> None:
     learn_p.add_argument("--max-steps", type=int, default=400)
     learn_p.add_argument("--seed", type=int, default=None)
     learn_p.add_argument("--out", default="learning.csv")
+    learn_p.add_argument("--teams", type=int, default=50,
+                         help="number of teams (>1 needed for fitness variance; =n_agents -> per-rider)")
 
     sub.add_parser("solara", help="launch the interactive Solara visualization")
     sub.add_parser("test", help="run the test suite (pytest)")
@@ -96,7 +102,7 @@ def main() -> None:
         case "run":
             run_headless(args.max_steps)
         case "learn":
-            run_learning(args.generations, args.max_steps, args.seed, args.out)
+            run_learning(args.generations, args.max_steps, args.seed, args.out, args.teams)
         case "solara":
             # solara is a server: this blocks until the user stops it (Ctrl-C).
             subprocess.run(["solara", "run", "run_app.py"], check=True)
