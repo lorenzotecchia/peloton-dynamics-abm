@@ -50,10 +50,11 @@ def test_sustainable_speed_does_not_crash_near_finish():
 
 
 def test_update_stamina_drains_above_cp_and_recovers_below():
+    cfg = PelotonConfig(recovery_rate=1.0)   # r=1: recover the full sub-CP deficit
     agent = types.SimpleNamespace(cp=280.0, w_full=1000.0, w_prime=500.0)
-    energy.update_stamina(agent, p_required=380.0, cfg=CFG)   # 100 W over CP, dt=1
+    energy.update_stamina(agent, p_required=380.0, cfg=cfg)   # 100 W over CP, dt=1
     assert agent.w_prime == pytest.approx(400.0)
-    energy.update_stamina(agent, p_required=230.0, cfg=CFG)   # 50 W under CP, r=1
+    energy.update_stamina(agent, p_required=230.0, cfg=cfg)   # 50 W under CP, r=1
     assert agent.w_prime == pytest.approx(450.0)
 
 
