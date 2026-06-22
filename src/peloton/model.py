@@ -217,13 +217,13 @@ class PelotonModel(Model):
             else:
                 v, cf_eff = v_group, cf_pack
 
+            m.wind_power = cfg.k_aero * cf_eff * v**3   # aerodynamic drag at the speed passed to update_stamina
             energy.update_stamina(m, energy.power_required(v, cf_eff, cfg), cfg)
             if m.w_prime <= 0.0:
                 v = min(v, m.s_cp*0.75)                 # exhausted: drop to sustainable speed
             new_x = min(m.pos[0] + v * cfg.dt, cfg.road_length)
             self.space.move_agent(m, (new_x, m.pos[1]))
             m.exposure = _exposure(cf_eff, cfg)
-            m.wind_power = cfg.k_aero * cf_eff * v**3
 
     def _remove_finishers(self):
         """Riders that crossed the line leave the road (and stop blocking it).
