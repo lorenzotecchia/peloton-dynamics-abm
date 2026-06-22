@@ -8,8 +8,8 @@ from peloton.config import PelotonConfig
 CFG = PelotonConfig(group_radius=3.0, k_s=0.8, draft_coefficient=0.62)
 
 
-def _rider(x, s_m=12.0):
-    return types.SimpleNamespace(pos=(x, 0.0), s_m=s_m)
+def _rider(x, s_sustain=12.0):
+    return types.SimpleNamespace(pos=(x, 0.0), s_sustain=s_sustain)
 
 
 def test_detect_groups_splits_on_gaps_and_chains_within_radius():
@@ -27,13 +27,13 @@ def test_detect_groups_singletons_when_all_far():
     assert len(group.detect_groups(riders, CFG.group_radius)) == 3
 
 
-def test_group_speed_is_ks_weighted_average_of_threshold_speeds():
-    a, b = _rider(0.0, s_m=10.0), _rider(1.0, s_m=14.0)
+def test_group_speed_is_ks_weighted_average_of_sustainable_speeds():
+    a, b = _rider(0.0, s_sustain=10.0), _rider(1.0, s_sustain=14.0)
     assert group.group_speed([a, b], [1.0, 1.0], CFG) == pytest.approx(0.8 * 12.0)
 
 
 def test_group_speed_falls_back_to_slowest_when_no_contribution():
-    a, b = _rider(0.0, s_m=10.0), _rider(1.0, s_m=14.0)
+    a, b = _rider(0.0, s_sustain=10.0), _rider(1.0, s_sustain=14.0)
     assert group.group_speed([a, b], [0.0, 0.0], CFG) == pytest.approx(0.8 * 10.0)
 
 

@@ -30,17 +30,18 @@ def detect_groups(riders, group_radius):
 
 
 def group_speed(members, contribs, cfg) -> float:
-    """Pack speed = k_s * sum(C_i * s_m,i) / sum(C_i).
+    """Pack speed = k_s * sum(C_i * s_sustain,i) / sum(C_i).
 
     ``contribs`` is a list of contributions aligned with ``members``. A
-    contribution-weighted average of members' threshold speeds, scaled by the
+    contribution-weighted average of members' *sustainable* speeds (a ceiling,
+    so the average sits below the strongest rider's limit), scaled by the
     (non-physical, SA-tuned) pack coefficient k_s. Falls back to the slowest
     rider if nobody contributes (sum C == 0).
     """
     total_c = sum(contribs)
     if total_c <= 0.0:
-        return cfg.k_s * min(m.s_m for m in members)
-    weighted = sum(c * m.s_m for m, c in zip(members, contribs))
+        return cfg.k_s * min(m.s_sustain for m in members)
+    weighted = sum(c * m.s_sustain for m, c in zip(members, contribs))
     return cfg.k_s * weighted / total_c
 
 
