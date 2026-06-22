@@ -39,12 +39,15 @@ def _num_breakaways(model: "PelotonModel") -> int:
     return sum(1 for a in model.agents if a.solo)
 
 
-def _exposure(cf_eff: float, cfg) -> float:
-    """Map effective drag factor (draft_coefficient..1) to exposure (0..1) for the viz."""
-    span = 1.0 - cfg.draft_coefficient
+def _exposure(cf_eff: float, min_cf_eff: float) -> float:
+    """Map effective drag factor to exposure (0..1) for the viz.
+
+    ``min_cf_eff`` is the sheltered baseline for the current pack size.
+    """
+    span = 1.0 - min_cf_eff
     if span <= 0.0:
         return 1.0
-    return max(0.0, min(1.0, (cf_eff - cfg.draft_coefficient) / span))
+    return max(0.0, min(1.0, (cf_eff - min_cf_eff) / span))
 
 
 class PelotonModel(Model):
@@ -202,6 +205,7 @@ class PelotonModel(Model):
             v_broke = None
             cf_broke = []
 
+        min_cf_eff = group.mean_draft_factor_for_group(len(members))
         for m, cf_pack in zip(members, cf):
             if m in broke:
                 if v_broke is not None:
@@ -222,7 +226,7 @@ class PelotonModel(Model):
                 v = min(v, m.s_cp*0.75)                 # exhausted: drop to sustainable speed
             new_x = min(m.pos[0] + v * cfg.dt, cfg.road_length)
             self.space.move_agent(m, (new_x, m.pos[1]))
-            m.exposure = _exposure(cf_eff, cfg)
+            m.exposure = _exposure(cf_eff, min_cf_eff)
 
     def _remove_finishers(self):
         """Riders that crossed the line leave the road (and stop blocking it).

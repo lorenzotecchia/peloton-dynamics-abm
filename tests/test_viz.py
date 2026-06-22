@@ -64,7 +64,6 @@ def test_draw_road_renders_one_true_scale_shape_per_rider():
     assert len(shapes) == 12
     assert shapes[0].width == cfg.rider_length     # drawn in road metres,
     assert shapes[0].height == cfg.rider_width     # not screen points
-    from peloton.viz import rider_color
     rider0 = list(model.agents)[0]
     expected = rider_color(rider0.team_id, cfg.n_teams, rider0.exposure)
     # matplotlib stores facecolor as RGBA; compare the RGB triple.
