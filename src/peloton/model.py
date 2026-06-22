@@ -141,44 +141,15 @@ class PelotonModel(Model):
     def step(self):
         """Advance one ``dt``: detect packs, resolve breakaways, move everyone.
 
-        Packs are re-detected each step from current positions, so a rider that
-        escapes (or gets caught) regroups by geometry alone.
-
-        To avoid recent breakaway members immediately rejoining their old pack
-        we keep a short cooldown (break_cooldown) during which they are
-        processed separately. However, we only move each agent once per step,
-        so newly-broken agents are processed with the regular pack in this step,
-        then excluded from regular packs on subsequent steps until cooldown expires.
+        Packs are re-detected each step from current positions, so grouping is
+        pure geometry: a rider that opens a gap becomes its own group and rides
+        solo, and an attacker that fails to escape (or gets caught) is reabsorbed
+        the moment it's back within ``group_radius`` of a pack — no timer keeps it
+        artificially off the front.
         """
         cfg = self.config
-        active = list(self.agents)
-
-        # Decrement short-term breakaway cooldowns and clear solo when expired
-        for a in active:
-            if getattr(a, "break_cooldown", 0) > 0:
-                a.break_cooldown -= 1
-                if a.break_cooldown == 0:
-                    a.solo = False
-
-        # Process agents that are not in cooldown (either always-regular or just
-        # had their cooldown expire). Agents that break THIS step will get
-        # break_cooldown set here and will be excluded from regular packs NEXT step.
-        eligible = [a for a in active if getattr(a, "break_cooldown", 0) == 0]
-        moved = set()
-        for members in group.detect_groups(eligible, cfg.group_radius):
+        for members in group.detect_groups(list(self.agents), cfg.group_radius):
             self._advance_group(members, cfg)
-            moved.update(members)
-
-        # Process recent breakers (from previous steps) that haven't been moved yet.
-        # This is typically empty since agents break and are moved in the same step,
-        # but handles edge cases if grouping logic changes.
-        remaining = [
-            a for a in active if a not in moved and getattr(a, "break_cooldown", 0) > 0
-        ]
-        for members in group.detect_groups(remaining, cfg.group_radius):
-            self._advance_group(members, cfg)
-            moved.update(members)
-
         self._remove_finishers()
         self.datacollector.collect(self)
 
@@ -192,20 +163,24 @@ class PelotonModel(Model):
         v_group = group.group_speed(members, efforts, cfg)
         cf = group.draft_factors(members, efforts, cfg)
 
-        # One decentralized decision per member: attack off the front, or ride.
-        # Following a breakaway / escaping a chaser / refusing a slow group all
-        # emerge from this same roll plus geometry; break_cooldown keeps a fresh
-        # breaker from immediately re-merging with the pack it just left, and
-        # groups simultaneous breakers into their own pack next step.
+        # Solo status is geometric, decided fresh each step:
+        #  - a lone rider always rides solo (full wind, no k_s pack penalty);
+        #  - the frontmost rider of a pack may launch / sustain an attack off the
+        #    front (rolls attack_prob if not already solo);
+        #  - everyone else is, by position, inside the pack -> draft and rejoin
+        #    (clears any stale solo flag), so a caught attacker drafts again.
+        # ponytail: only the frontmost can attack; in this 1-D model a rider
+        # buried mid-pack can't ride off the front anyway.
+        front = max(members, key=lambda m: m.pos[0])
+        lone = len(members) == 1
+        if not lone and not front.solo and \
+                self.random.random() < strategy.attack_prob(front, members, v_group, cfg):
+            front.solo = True
         for m in members:
-            if (
-                getattr(m, "break_cooldown", 0) == 0
-                and not m.solo
-                and self.random.random()
-                < strategy.attack_prob(m, members, v_group, cfg)
-            ):
+            if lone:
                 m.solo = True
-                m.break_cooldown = cfg.breakaway_cooldown_steps
+            elif m is not front:
+                m.solo = False
 
         for m, cf_pack, eff in zip(members, cf, efforts):
             if m.solo:

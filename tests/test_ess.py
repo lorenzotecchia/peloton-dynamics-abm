@@ -5,20 +5,11 @@ does no better than the residents. We don't prove it analytically — we evolve 
 resident population, drop in a mutant at low frequency, race, and compare the
 mutant's payoff to the residents'. One rider per team (n_teams == n_agents) so
 each rider's utility is its own score, not a shared team total.
-
-Status: currently XFAIL. The model is *not* ESS today — a solo rider rides its
-full sustainable speed while a pack only manages ``k_s * s_sustain`` (k_s < 1),
-so breaking away pays and an aggressive mutant out-scores the cooperative
-residents. The assertion below encodes the ESS criterion; once the pack-speed
-penalty no longer makes solo riding strictly better, this flips to XPASS and the
-marker should be removed.
 """
 
 import copy
 import random
 import statistics
-
-import pytest
 
 from peloton import evolution
 from peloton.config import PelotonConfig
@@ -43,7 +34,6 @@ def _race_utilities(cfg, population, max_steps=200):
     return [r.utility for r in model.riders]
 
 
-@pytest.mark.xfail(reason="model not ESS: solo riders escape the k_s pack penalty", strict=False)
 def test_evolved_residents_resist_random_mutant():
     # Evolve a resident strategy across several races.
     _hist, residents = evolution.run_generations(

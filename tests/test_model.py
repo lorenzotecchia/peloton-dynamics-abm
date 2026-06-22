@@ -97,6 +97,19 @@ def test_breakaways_occur_with_attack_prone_coeffs():
     assert seen_solo                              # at least one rider went off the front
 
 
+def test_caught_attacker_rejoins_nearby_group():
+    # A rider flagged as a breakaway that is back inside a pack (and not off the
+    # front) must rejoin and draft, not stay locked solo.
+    cfg = PelotonConfig(n_agents=3, n_teams=1, road_length=2000.0, seed=5)
+    model = PelotonModel(cfg)
+    for i, a in enumerate(sorted(model.agents, key=lambda a: a.unique_id)):
+        model.space.move_agent(a, (100.0 + i * 0.5, 4.0))   # tight bunch, all < 3 m apart
+    back = min(model.agents, key=lambda a: a.pos[0])         # not the frontmost
+    back.solo = True
+    model.step()
+    assert back.solo is False                               # reabsorbed -> drafting again
+
+
 def test_race_stops_running_when_everyone_finished():
     cfg = PelotonConfig(n_agents=6, n_teams=2, road_length=40.0, seed=8)
     model = PelotonModel(cfg)

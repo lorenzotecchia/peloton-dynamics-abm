@@ -29,10 +29,7 @@ class CyclistAgent(Agent):
         self.coeffs = (
             coeffs if coeffs is not None else strategy.default_coeffs(model.random)
         )
-        self.solo = False  # True while a rider is off the front / chasing a breakaway (cleared after cooldown)
-        self.break_cooldown = (
-            0  # short-term memory to keep recent breakers separate from original packs
-        )
+        self.solo = False  # True while a rider is off the front (alone / frontmost-attacking); recomputed each step by geometry
         self.exposure = 1.0  # cf_eff-derived wind exposure, for the viz
         self.effort = 0.5  # public-goods contribution, persisted for the matching term
         self.utility = 0.0  # race-outcome score, read by evolution

@@ -27,7 +27,6 @@ class PelotonConfig:
     group_radius: float = 3.0       # "<3 m apart => same group"
     k_s: float = 0.8                # pack speed coefficient, in [0.7, 1] (Martins 2013)
     draft_coefficient: float = 0.62 # air-power multiplier when fully sheltered (vs 1.0 leading)
-    breakaway_cooldown_steps: int = 10  # steps during which recent breakers are kept separate from original packs
 
     # --- Across-race evolution. ---
     learning_rate: float = 0.1      # eta: coefficient update step
