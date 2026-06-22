@@ -183,17 +183,24 @@ class PelotonModel(Model):
                 m.solo = False
 
         for m, cf_pack, eff in zip(members, cf, efforts):
-            if m.solo:
+            sprinting = (cfg.road_length - m.pos[0]) <= cfg.sprint_distance
+            if sprinting:
+                # Endgame: everyone comes out of the draft and empties the tank.
+                # Full gas (s_m) while W' lasts, then crawl in at critical speed.
+                # This is where saved energy finally converts to finishing speed,
+                # so drafting/conservation upstream decides the result.
+                v, cf_eff = (m.s_m if m.w_prime > 0.0 else m.s_cp), 1.0
+            elif m.solo:
                 # off the front: ride own sustainable solo speed in full wind
                 v, cf_eff = energy.sustainable_speed(m, cfg, 1.0), 1.0
             else:
                 v, cf_eff = v_group, cf_pack
 
-            # Exhausted (W' spent before the line): slow below critical power so
-            # stamina rebuilds instead of going further into the red. Cap BEFORE
-            # the stamina update so the lower power actually drives recovery; once
-            # W' climbs back above 0 the rider resumes normal pace next step.
-            if m.w_prime <= 0.0:
+            # Exhausted before the sprint: slow below critical power so stamina
+            # rebuilds instead of going further into the red (cap BEFORE the
+            # stamina update so the lower power drives recovery). In the sprint we
+            # *want* to drain W', so the cap doesn't apply there.
+            if not sprinting and m.w_prime <= 0.0:
                 v = min(v, m.s_cp * 0.75)
             energy.update_stamina(m, energy.power_required(v, cf_eff, cfg), cfg)
             new_x = min(m.pos[0] + v * cfg.dt, cfg.road_length)
