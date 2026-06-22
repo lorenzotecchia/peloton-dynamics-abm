@@ -22,18 +22,36 @@ from peloton import energy
 # real-valued so sign carries meaning (negative lambda_risk = gambler,
 # beta_loss > 1 = loss-averse).
 DEFAULT_COEFF_MEANS = {
-    "effort": {"alpha": 0.0, "beta_dist": 0.0, "gamma_team": 0.0,
-               "delta_energy": 0.0, "gamma_match": 0.0},
+    "effort": {
+        "alpha": 0.0,
+        "beta_dist": 0.0,
+        "gamma_team": 0.0,
+        "delta_energy": 0.0,
+        "gamma_match": 0.0,
+    },
     "sustain": {"bias": 0.0, "k_gap": 0.5},
-    "weights": {"lambda_speed": 1.0, "lambda_energy": 1.0,
-                "lambda_risk": 0.5, "beta_loss": 1.5},
+    "weights": {
+        "lambda_speed": 1.0,
+        "lambda_energy": 1.0,
+        "lambda_risk": 0.5,
+        "beta_loss": 1.5,
+    },
 }
 DEFAULT_COEFF_STDS = {
-    "effort": {"alpha": 1.0, "beta_dist": 1.0, "gamma_team": 1.0,
-               "delta_energy": 1.0, "gamma_match": 1.0},
-    "sustain": {"bias": 1.0, "k_gap": 1.0},
-    "weights": {"lambda_speed": 1.0, "lambda_energy": 1.0,
-                "lambda_risk": 0.5, "beta_loss": 0.5},
+    "effort": {
+        "alpha": 5.0,
+        "beta_dist": 5.0,
+        "gamma_team": 5.0,
+        "delta_energy": 5.0,
+        "gamma_match": 5.0,
+    },
+    "sustain": {"bias": 5.0, "k_gap": 5.0},
+    "weights": {
+        "lambda_speed": 5.0,
+        "lambda_energy": 5.0,
+        "lambda_risk": 0.5,
+        "beta_loss": 0.5,
+    },
 }
 
 
@@ -97,13 +115,18 @@ def attack_prob(agent, group, v_group: float, cfg) -> float:
     p = sustain_probability(agent, v_group, cfg)
 
     speed_gain = (s_solo - v_group) / agent.s_m
-    drag_cost = w["lambda_energy"] * (
-        energy.power_required(s_solo, 1.0, cfg)
-        - energy.power_required(v_group, cfg.draft_coefficient, cfg)
-    ) * cfg.dt / agent.w_full
+    drag_cost = (
+        w["lambda_energy"]
+        * (
+            energy.power_required(s_solo, 1.0, cfg)
+            - energy.power_required(v_group, cfg.draft_coefficient, cfg)
+        )
+        * cfg.dt
+        / agent.w_full
+    )
 
     success = w["lambda_speed"] * speed_gain - drag_cost
-    fail = -w["beta_loss"] * drag_cost          # spent energy, no prize
+    fail = -w["beta_loss"] * drag_cost  # spent energy, no prize
     expected = p * success + (1.0 - p) * fail
     std = math.sqrt(max(0.0, p * (1.0 - p))) * abs(success - fail)
     u = expected - w["lambda_risk"] * std
@@ -118,12 +141,14 @@ def effort(agent, group, cfg) -> float:
     """
     c = agent.coeffs["effort"]
     others = [o for o in group if o is not agent]
-    mean_prev = (sum(o.effort for o in others) / len(others)) if others else agent.effort
+    mean_prev = (
+        (sum(o.effort for o in others) / len(others)) if others else agent.effort
+    )
     z = (
         c["alpha"]
         + c["beta_dist"] * _distance_frac(agent, cfg)
         + c["gamma_team"] * _teammates_in(agent, group)
-        + c["delta_energy"] * _energy_frac(agent)   # more energy -> more willing to pull
+        + c["delta_energy"] * _energy_frac(agent)  # more energy -> more willing to pull
         + c["gamma_match"] * (mean_prev - agent.effort)
     )
     return sigmoid(z)
