@@ -20,8 +20,9 @@ def _rider(uid, w_max10, alpha, team_id=0):
 
 def test_evolve_pulls_loser_toward_similar_winner():
     cfg = PelotonConfig(learning_rate=0.1, evo_noise=0.0, sim_scale=1.0)
-    winner = _rider(uid=0, w_max10=400.0, alpha=2.0)    # finishes first
-    loser = _rider(uid=1, w_max10=400.0, alpha=0.0)     # same engine, finishes last
+    # Distinct teams so utility (now a team total) stays per-rider here.
+    winner = _rider(uid=0, w_max10=400.0, alpha=2.0, team_id=0)  # finishes first
+    loser = _rider(uid=1, w_max10=400.0, alpha=0.0, team_id=1)   # same engine, finishes last
     # finish_order: winner then loser -> winner has higher utility.
     evolution.evolve([winner, loser], _fake_model([(0, 5), (1, 9)], cfg))
 
@@ -42,8 +43,8 @@ def test_evolution_does_not_diverge_over_many_generations():
 
 def test_evolve_assigns_dnf_lowest_utility():
     cfg = PelotonConfig(learning_rate=0.1, evo_noise=0.0)
-    finisher = _rider(uid=0, w_max10=400.0, alpha=1.0)
-    dnf = _rider(uid=1, w_max10=400.0, alpha=0.0)
+    finisher = _rider(uid=0, w_max10=400.0, alpha=1.0, team_id=0)
+    dnf = _rider(uid=1, w_max10=400.0, alpha=0.0, team_id=1)        # distinct teams
     evolution.evolve([finisher, dnf], _fake_model([(0, 7)], cfg))   # only rider 0 finished
     assert finisher.utility > dnf.utility
     assert dnf.utility == 0.0

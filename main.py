@@ -47,11 +47,31 @@ def run_learning(generations: int, max_steps: int, seed: int | None, out: str) -
     if population is not None:
         with open("population.json", "w") as fh:
             json.dump(population, fh, indent=2)
-        print("Wrote final population to population.json")
+        print("Wrote final population to population.json (load it via the solara command)")
 
     first, last = history[0], history[-1]
-    print(f"  coop.delta mean: {first['coop.delta_mean']:.3f} -> {last['coop.delta_mean']:.3f}"
-          f"  (std {first['coop.delta_std']:.3f} -> {last['coop.delta_std']:.3f})")
+    key = "effort.delta_energy"
+    print(f"  {key} mean: {first[key + '_mean']:.3f} -> {last[key + '_mean']:.3f}"
+          f"  (std {first[key + '_std']:.3f} -> {last[key + '_std']:.3f})")
+
+    # Did riders learn to finish faster? Mean steps-to-finish + how many finished.
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    gens = [h["generation"] for h in history]
+    fig, ax1 = plt.subplots(figsize=(8, 4))
+    ax1.plot(gens, [h["mean_finish_step"] for h in history], "b-o", ms=3, label="mean")
+    ax1.plot(gens, [h["min_finish_step"] for h in history], "c--", label="best")
+    ax1.set_xlabel("generation")
+    ax1.set_ylabel("steps to finish", color="b")
+    ax2 = ax1.twinx()
+    ax2.plot(gens, [h["n_finished"] for h in history], "r:", label="riders finished")
+    ax2.set_ylabel("riders finished", color="r")
+    ax1.legend(loc="upper left")
+    fig.tight_layout()
+    fig.savefig("learning_finish_steps.png", dpi=120)
+    print("Wrote learning_finish_steps.png")
 
 
 def main() -> None:

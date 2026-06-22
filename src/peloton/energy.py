@@ -89,7 +89,9 @@ def update_stamina(agent, p_required: float, cfg) -> None:
     if p_required > agent.cp:
         agent.w_prime -= (p_required - agent.cp) * dt
     else:
-        agent.w_prime += cfg.recovery_rate * (agent.cp - p_required) * dt
+        agent.w_prime += (
+            cfg.recovery_rate * (agent.cp - p_required) * dt
+        )  # TODO: change attacking probability based on stamina
         agent.w_prime = min(agent.w_prime, agent.w_full)
     agent.w_prime = max(agent.w_prime, 0.0)
 

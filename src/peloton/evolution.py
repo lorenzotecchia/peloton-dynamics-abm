@@ -32,26 +32,26 @@ from peloton.model import PelotonModel
 #         a.utility = (n - rank[a.unique_id]) if a.unique_id in rank else 0.0
 
 def _assign_utilities(agents, model) -> None:
-    """Utility decays exponentially by finishing position; DNF = 0."""
-    rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
+    """Score each rider, then set its utility to the rider's *team total*.
 
+    Individual points decay exponentially by finishing position (DNF = 0); a
+    rider's utility is the sum of its teammates' points, so evolution rewards
+    coefficients that help the whole team rather than the lone rider. With one
+    rider per team this collapses back to the individual score.
+    """
+    rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
     decay = 0.4  # smaller -> steeper decay
 
-    if not model.finish_order:
-        return None  # nessun vincitore
-
-    winner_uid = model.finish_order[0][0]
-    winner = next((a for a in agents if a.unique_id == winner_uid), None)
-    team_winner = winner.team_id
-
+    points = {
+        a.unique_id: (2.0 * math.exp(-decay * rank[a.unique_id])
+                      if a.unique_id in rank else 0.0)
+        for a in agents
+    }
+    team_points: dict = {}
     for a in agents:
-        if a.unique_id in rank:
-            pos = rank[a.unique_id]
-            a.utility = 2 * math.exp(-decay * pos)
-        else:
-            a.utility = 0.0
-        if a.team_id == team_winner:
-            a.utility += 0.0
+        team_points[a.team_id] = team_points.get(a.team_id, 0.0) + points[a.unique_id]
+    for a in agents:
+        a.utility = team_points[a.team_id]
 
 def _similarity(a, b, cfg) -> float:
     """Gaussian on the engine difference. s_m is a monotone function of w_max10,
@@ -169,7 +169,15 @@ def run_generations(n_generations: int, max_steps: int, config=None) -> tuple[li
                 break
             model.step()
 
-        entry = {"generation": gen, "n_finished": model.n_finished}
+        finish_steps = [step for _uid, step in model.finish_order]
+        entry = {
+            "generation": gen,
+            "n_finished": model.n_finished,
+            # Steps-to-finish: if learning sharpens skill these should fall (and
+            # n_finished rise) across generations. NaN when nobody finished.
+            "mean_finish_step": statistics.mean(finish_steps) if finish_steps else float("nan"),
+            "min_finish_step": min(finish_steps) if finish_steps else float("nan"),
+        }
         entry.update(_coeff_stats(model.riders))       # coeffs that raced this generation
         
         # Call evolve, which assigns utilities internally and updates coefficients
