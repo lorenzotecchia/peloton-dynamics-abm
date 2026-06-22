@@ -12,9 +12,9 @@ import random
 # Mean and standard deviation for the initial coefficients. alpha = bias,
 # beta = distance, gamma = teammates, delta = energy fraction.
 DEFAULT_COEFF_MEANS = {
-    "coop":   {"alpha": 2.0, "beta": 20.0, "gamma": 0.0, "delta": 5.0},
-    "leave":  {"alpha": -2.0, "beta": -2.0, "gamma": 0.0, "delta": -1.0},
-    "follow": {"alpha": -2.0, "beta": -2.0, "gamma": 0.0, "delta": -2.0},
+    "coop": {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
+    "attack": {"alpha": 0.0, "k_attack": 0.0},
+    "follow": {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
 }
 # DEFAULT_COEFF_MEANS = {
 #     "coop":   {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
@@ -22,9 +22,9 @@ DEFAULT_COEFF_MEANS = {
 #     "follow": {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
 # }
 DEFAULT_COEFF_STDS = {
-    "coop":   {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
-    "leave":  {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
-    "follow": {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
+    "coop": {"alpha": 5.0, "beta": 5.0, "gamma": 5.0, "delta": 5.0},
+    "leave": {"alpha": 5.0, "beta": 5.0, "gamma": 5.0, "delta": 5.0},
+    "follow": {"alpha": 5.0, "beta": 5.0, "gamma": 5.0, "delta": 5.0},
 }
 
 
@@ -33,7 +33,9 @@ def default_coeffs(rng: random.Random | None = None) -> dict:
     rng = rng or random.Random()
     return {
         group: {
-            name: rng.gauss(DEFAULT_COEFF_MEANS[group][name], DEFAULT_COEFF_STDS[group][name])
+            name: rng.gauss(
+                DEFAULT_COEFF_MEANS[group][name], DEFAULT_COEFF_STDS[group][name]
+            )
             for name in params
         }
         for group, params in DEFAULT_COEFF_MEANS.items()
@@ -62,8 +64,15 @@ def _teammates_in(agent, group) -> int:
     return sum(1 for o in group if o is not agent and o.team_id == agent.team_id)
 
 
+def expected_payoff_k_agents(k, cfg):
+    """avg payoff of group of k agents"""
+    for i in range(k):
+        expected += cfg.utility_coeff * math.exp(-cfg.utility_decay * i)
+    return expected / k
+
+
 def contribution(agent, group, cfg) -> float:
-    """C_i = sigma(alpha + beta*d/L + gamma*T + delta*W'/W_full), in (0, 1)."""
+    """C_i = sigma(alpha + beta*d/L + gamma*T + delta*(1-W'/W_full), in (0, 1)."""
     c = agent.coeffs["coop"]
     z = (
         c["alpha"]
@@ -73,6 +82,37 @@ def contribution(agent, group, cfg) -> float:
     )
     # print(f"Agent {agent.unique_id} contribution z: {z:.3f} ,", "sigmoid:", sigmoid(z))
     return sigmoid(z)
+
+
+def sustain_probability(agent, v_group: float) -> float:
+    """probability of being able to sustain an attack
+    p_sustain = sigmoid(alpha + beta*(v_attack-v_group)*)
+    """
+    a = agent.coeffs["attack"]
+    return sigmoid(a[0] + (agent.s_sustain - v_group) * a[1])
+
+
+def expected_followers(agent, group, v_attack, cfg):
+    None
+
+
+def attack_probability(agent, group) -> float:
+    """probability of attack consists in expected payoff_attack / (payoff_attack + payoff_stay)
+
+    payoff_attack = probability of being capable of sustaining attack (p_sustain)
+                    * expected payoff of being in first k winners, with k being
+                    the number of expected riders following the attack and riders ahead.
+    payoff_stay =   expected payoff of being in first n winners, with n being the number
+                    of agents within the group + riders ahead.
+    """
+    k = expected_followers(agent, group.v_group)
+    payoff_attack = sustain_probability(
+        agent, group.v_group
+    ) * expected_payoff_k_agents(k + group.ahead)
+
+    payoff_stay = expected_payoff_k_agents(group.n + group.ahead)
+
+    return payoff_attack / (payoff_attack + payoff_stay)
 
 
 def breakaway_prob(agent, v_group, cfg) -> float:

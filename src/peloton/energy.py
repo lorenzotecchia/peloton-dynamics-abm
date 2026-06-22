@@ -17,6 +17,16 @@ def power_required(v: float, cf_eff: float, cfg) -> float:
     return cfg.k_aero * cf_eff * v**3 + cfg.c_roll * v
 
 
+def sustainable_speed(agent, cfg, cf_eff: float = 1.0) -> float:
+    """speed sustainable from current position until the finish line, using Cardano's formula"""
+    d_f = cfg.road_length - agent.pos[0]  # distance from finish line
+    p = -(cfg.c_roll * d_f - agent.w_prime) / (3 * cfg.k_aero * cf_eff * d_f)
+    q = (agent.cp) / (cfg.k_aero) / (2 * cfg.k_aero * cf_eff)
+    sqrt_pq = math.sqrt(q**2 - p**3)
+    v = math.cbrt(q + sqrt_pq) + math.cbrt(q - sqrt_pq)
+    return max(v, agent.s_cp)
+
+
 def solo_speed(power: float, cfg, cf_eff: float = 1.0) -> float:
     """Speed sustainable at ``power`` — inverts ``power_required`` via Newton.
 
@@ -25,7 +35,7 @@ def solo_speed(power: float, cfg, cf_eff: float = 1.0) -> float:
     """
     if power <= 0.0:
         return 0.0
-    v = (power / (cfg.k_aero * cf_eff)) ** (1.0 / 3.0)   # air-only seed
+    v = (power / (cfg.k_aero * cf_eff)) ** (1.0 / 3.0)  # air-only seed
     for _ in range(20):
         f = cfg.k_aero * cf_eff * v**3 + cfg.c_roll * v - power
         fp = 3.0 * cfg.k_aero * cf_eff * v**2 + cfg.c_roll
@@ -56,8 +66,8 @@ def initial_stamina(w_max10: float, cp: float, cfg) -> float:
 def init_physiology(agent, cfg) -> None:
     """Fill an agent's derived physiology from its ``w_max10`` (set at spawn)."""
     agent.cp = critical_power(agent.w_max10, cfg)
-    agent.s_m = solo_speed(agent.w_max10, cfg)          # speed at W_max10 (leading)
-    agent.s_cp = solo_speed(agent.cp, cfg)              # sustainable (critical) speed
+    agent.s_m = solo_speed(agent.w_max10, cfg)  # speed at W_max10 (leading)
+    agent.s_cp = solo_speed(agent.cp, cfg)  # sustainable (critical) speed
     agent.w_full = initial_stamina(agent.w_max10, agent.cp, cfg)
     agent.w_prime = agent.w_full
 
@@ -74,3 +84,7 @@ def update_stamina(agent, p_required: float, cfg) -> None:
         agent.w_prime += cfg.recovery_rate * (agent.cp - p_required) * dt
         agent.w_prime = min(agent.w_prime, agent.w_full)
     agent.w_prime = max(agent.w_prime, 0.0)
+
+
+def update_sustain_speed(agent, cfg, cf_eff: float = 1.0) -> None:
+    agent.s_sustain = sustainable_speed(agent, cfg, cf_eff)

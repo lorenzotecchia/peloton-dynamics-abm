@@ -21,11 +21,17 @@ class CyclistAgent(Agent):
         # Heterogeneous engine; floor keeps the Gaussian tail physical.
         self.w_max10 = max(50.0, model.random.gauss(cfg.w_max10_mean, cfg.w_max10_std))
         # Derived physiology, all filled by init_physiology below.
-        self.cp = self.s_m = self.s_cp = self.w_full = self.w_prime = 0.0
+        self.cp = self.s_m = self.s_cp = self.s_sustain = self.w_full = self.w_prime = (
+            0.0
+        )
         energy.init_physiology(self, cfg)
 
-        self.coeffs = coeffs if coeffs is not None else strategy.default_coeffs(model.random)
-        self.solo = False        # True while a rider is off the front / chasing a breakaway (cleared after cooldown)
-        self.break_cooldown = 0  # short-term memory to keep recent breakers separate from original packs
-        self.exposure = 1.0      # cf_eff-derived wind exposure, for the viz
-        self.utility = 0.0       # race-outcome score, read by evolution
+        self.coeffs = (
+            coeffs if coeffs is not None else strategy.default_coeffs(model.random)
+        )
+        self.solo = False  # True while a rider is off the front / chasing a breakaway (cleared after cooldown)
+        self.break_cooldown = (
+            0  # short-term memory to keep recent breakers separate from original packs
+        )
+        self.exposure = 1.0  # cf_eff-derived wind exposure, for the viz
+        self.utility = 0.0  # race-outcome score, read by evolution
