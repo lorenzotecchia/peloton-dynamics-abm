@@ -14,6 +14,7 @@ from mesa.visualization import SolaraViz, make_plot_component
 from mesa.visualization.user_param import Slider
 from mesa.visualization.utils import update_counter
 
+from peloton import group
 from peloton.model import PelotonModel
 
 CAMERA_WINDOW = 120.0   # metres of road visible at once (fixed-width follow window)
@@ -40,8 +41,19 @@ def rider_color(team_id: int, n_teams: int, exposure: float) -> tuple[float, flo
     return colorsys.hsv_to_rgb(hue, 0.85, value)
 
 
-def draw_road(model, ax):
+def _peloton_center(model, agents) -> float:
+    """x-centre of the biggest cluster of riders (the peloton)."""
+    groups = group.detect_groups(agents, model.config.group_radius)
+    biggest = max(groups, key=len)
+    return sum(a.pos[0] for a in biggest) / len(biggest)
+
+
+def draw_road(model, ax, focus="leader"):
     """Render the road strip with riders at true physical scale.
+
+    ``focus`` picks what the camera follows: ``"leader"`` keeps the frontmost
+    rider near the right edge; ``"peloton"`` centres on the biggest cluster so
+    you can watch the bunch even after a breakaway rides off the front.
 
     Safe for an empty race: once every rider has finished, the full road is
     shown with a banner instead of crashing on a zero-agent space.
@@ -53,6 +65,7 @@ def draw_road(model, ax):
     ax.set_ylim(-1.0, cfg.road_width + 1.0)
     ax.set_yticks([])
     ax.set_xlabel("distance (m)")
+    ax.set_title("peloton view" if focus == "peloton" else "leader view")
 
     if not agents:
         ax.set_xlim(0.0, cfg.road_length)
@@ -62,9 +75,14 @@ def draw_road(model, ax):
         )
         return
 
-    leader_x = max(a.pos[0] for a in agents)
-    x_hi = leader_x + LEADER_MARGIN
-    x_lo = x_hi - CAMERA_WINDOW
+    if focus == "peloton":
+        centre = _peloton_center(model, agents)
+        x_lo = centre - CAMERA_WINDOW / 2.0
+        x_hi = centre + CAMERA_WINDOW / 2.0
+    else:
+        leader_x = max(a.pos[0] for a in agents)
+        x_hi = leader_x + LEADER_MARGIN
+        x_lo = x_hi - CAMERA_WINDOW
     ax.set_xlim(x_lo, x_hi)
 
     # Scrolling centre-line: dashes at fixed world-x positions. As the window
@@ -99,11 +117,21 @@ def draw_road(model, ax):
 
 @solara.component
 def RoadView(model):
-    """Solara component wrapping :func:`draw_road`; re-renders every model step."""
+    """Camera following the leader; re-renders every model step."""
     update_counter.get()
     fig = Figure(figsize=(10, 2.5))
     ax = fig.add_subplot()
-    draw_road(model, ax)
+    draw_road(model, ax, focus="leader")
+    solara.FigureMatplotlib(fig)
+
+
+@solara.component
+def PelotonView(model):
+    """Camera centred on the biggest cluster (the peloton), not the leader."""
+    update_counter.get()
+    fig = Figure(figsize=(10, 2.5))
+    ax = fig.add_subplot()
+    draw_road(model, ax, focus="peloton")
     solara.FigureMatplotlib(fig)
 
 
