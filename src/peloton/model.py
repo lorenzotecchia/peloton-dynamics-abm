@@ -223,6 +223,7 @@ class PelotonModel(Model):
             new_x = min(m.pos[0] + v * cfg.dt, cfg.road_length)
             self.space.move_agent(m, (new_x, m.pos[1]))
             m.exposure = _exposure(cf_eff, cfg)
+            m.wind_power = cfg.k_aero * cf_eff * v**3
 
     def _remove_finishers(self):
         """Riders that crossed the line leave the road (and stop blocking it).

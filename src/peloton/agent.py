@@ -29,3 +29,4 @@ class CyclistAgent(Agent):
         self.break_cooldown = 0  # short-term memory to keep recent breakers separate from original packs
         self.exposure = 1.0      # cf_eff-derived wind exposure, for the viz
         self.utility = 0.0       # race-outcome score, read by evolution
+        self.wind_power = 0.0    # aerodynamic power (W) at the current step: k_aero * cf_eff * v^3
