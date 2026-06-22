@@ -20,11 +20,19 @@ def power_required(v: float, cf_eff: float, cfg) -> float:
 def sustainable_speed(agent, cfg, cf_eff: float = 1.0) -> float:
     """speed sustainable from current position until the finish line, using Cardano's formula"""
     d_f = cfg.road_length - agent.pos[0]  # distance from finish line
+    # ponytail: near the line (d_f -> 0) or with energy to spare the cubic
+    # discriminant goes negative; physically you can dump W' and sprint, so cap
+    # at s_m rather than solve the casus-irreducibilis root.
+    if d_f <= 1e-6:
+        return agent.s_m
     p = -(cfg.c_roll * d_f - agent.w_prime) / (3 * cfg.k_aero * cf_eff * d_f)
     q = (agent.cp) / (cfg.k_aero) / (2 * cfg.k_aero * cf_eff)
-    sqrt_pq = math.sqrt(q**2 - p**3)
+    disc = q**2 - p**3
+    if disc < 0.0:
+        return agent.s_m
+    sqrt_pq = math.sqrt(disc)
     v = math.cbrt(q + sqrt_pq) + math.cbrt(q - sqrt_pq)
-    return max(v, agent.s_cp)
+    return max(min(v, agent.s_m), agent.s_cp)
 
 
 def solo_speed(power: float, cfg, cf_eff: float = 1.0) -> float:

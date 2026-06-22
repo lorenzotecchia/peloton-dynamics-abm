@@ -40,6 +40,15 @@ def test_init_physiology_sets_positive_consistent_values():
     assert energy.power_required(agent.s_m, 1.0, CFG) == pytest.approx(400.0, rel=1e-9)
 
 
+def test_sustainable_speed_does_not_crash_near_finish():
+    # Near the line d_f -> 0 drives the cubic discriminant negative; must clamp,
+    # not raise (the model now calls this every step for every rider).
+    agent = types.SimpleNamespace(w_max10=400.0, pos=(CFG.road_length - 0.5, 0.0))
+    energy.init_physiology(agent, CFG)
+    v = energy.sustainable_speed(agent, CFG, cf_eff=1.0)
+    assert agent.s_cp <= v <= agent.s_m + 1e-6
+
+
 def test_update_stamina_drains_above_cp_and_recovers_below():
     agent = types.SimpleNamespace(cp=280.0, w_full=1000.0, w_prime=500.0)
     energy.update_stamina(agent, p_required=380.0, cfg=CFG)   # 100 W over CP, dt=1

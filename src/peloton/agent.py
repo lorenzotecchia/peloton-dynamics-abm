@@ -34,4 +34,5 @@ class CyclistAgent(Agent):
             0  # short-term memory to keep recent breakers separate from original packs
         )
         self.exposure = 1.0  # cf_eff-derived wind exposure, for the viz
+        self.effort = 0.5  # public-goods contribution, persisted for the matching term
         self.utility = 0.0  # race-outcome score, read by evolution

@@ -172,57 +172,40 @@ class PelotonModel(Model):
         self.datacollector.collect(self)
 
     def _advance_group(self, members, cfg):
-        contribs = [strategy.contribution(m, members, cfg) for m in members]
-        v_group = group.group_speed(members, contribs, cfg)
-        cf = group.draft_factors(members, contribs, cfg)
-
-        # Breakaway, then teammates deciding whether to chase it. Use a
-        # short-lived cooldown so we can treat recent breakers as a separate
-        # set (possibly forming their own new pack) and avoid permanent solo
-        # tagging.
-        broke = []
+        # Refresh each rider's sustainable-to-finish speed (drives pack speed and
+        # the attack decision). cf=1 is the conservative solo ceiling.
         for m in members:
-            if getattr(m, "break_cooldown", 0) == 0 and not m.solo and self.random.random() < strategy.breakaway_prob(m, v_group, cfg):
+            energy.update_sustain_speed(m, cfg)
+
+        efforts = [strategy.effort(m, members, cfg) for m in members]
+        v_group = group.group_speed(members, efforts, cfg)
+        cf = group.draft_factors(members, efforts, cfg)
+
+        # One decentralized decision per member: attack off the front, or ride.
+        # Following a breakaway / escaping a chaser / refusing a slow group all
+        # emerge from this same roll plus geometry; break_cooldown keeps a fresh
+        # breaker from immediately re-merging with the pack it just left, and
+        # groups simultaneous breakers into their own pack next step.
+        for m in members:
+            if getattr(m, "break_cooldown", 0) == 0 and not m.solo \
+                    and self.random.random() < strategy.attack_prob(m, members, v_group, cfg):
                 m.solo = True
                 m.break_cooldown = cfg.breakaway_cooldown_steps
-                broke.append(m)
-        if broke:
-            for m in members:
-                if m not in broke and getattr(m, "break_cooldown", 0) == 0 and not m.solo and self.random.random() < strategy.follow_prob(m, broke, cfg):
-                    m.solo = True
-                    m.break_cooldown = cfg.breakaway_cooldown_steps
 
-        # If multiple riders broke simultaneously, treat them as a new pack for
-        # the purposes of speed/drafting for this timestep.
-        if broke and len(broke) > 1:
-            contribs_broke = [strategy.contribution(m, broke, cfg) for m in broke]
-            v_broke = group.group_speed(broke, contribs_broke, cfg)
-            cf_broke = group.draft_factors(broke, contribs_broke, cfg)
-        else:
-            v_broke = None
-            cf_broke = []
-
-        for m, cf_pack in zip(members, cf):
-            if m in broke:
-                if v_broke is not None:
-                    # collective breakaway speed with drafting among breakers
-                    idx = broke.index(m)
-                    v, cf_eff = v_broke, cf_broke[idx]
-                else:
-                    # single rider breakaway: exposed to full wind
-                    v, cf_eff = cfg.breakaway_speed_frac * m.s_m, 1.0
-            elif m.solo:
-                # chasers / solo riders (no drafting)
-                v, cf_eff = cfg.breakaway_speed_frac * m.s_m, 1.0
+        for m, cf_pack, eff in zip(members, cf, efforts):
+            if m.solo:
+                # off the front: ride own sustainable solo speed in full wind
+                v, cf_eff = energy.sustainable_speed(m, cfg, 1.0), 1.0
             else:
                 v, cf_eff = v_group, cf_pack
 
             energy.update_stamina(m, energy.power_required(v, cf_eff, cfg), cfg)
             if m.w_prime <= 0.0:
-                v = min(v, m.s_cp*0.75)                 # exhausted: drop to sustainable speed
+                v = min(v, m.s_cp * 0.75)              # exhausted: drop to sustainable speed
             new_x = min(m.pos[0] + v * cfg.dt, cfg.road_length)
             self.space.move_agent(m, (new_x, m.pos[1]))
             m.exposure = _exposure(cf_eff, cfg)
+            m.effort = eff                              # stash for next step's matching term
 
     def _remove_finishers(self):
         """Riders that crossed the line leave the road (and stop blocking it).

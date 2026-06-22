@@ -22,9 +22,10 @@ def test_agent_has_team_and_default_strategy_state():
     assert agent.team_id == 2
     assert agent.solo is False
     assert agent.utility == 0.0
+    assert agent.effort == 0.5
     # Fresh agent carries an independent copy of the default coefficients.
-    assert set(agent.coeffs) == {"coop", "leave", "follow"}
-    assert agent.coeffs["coop"]["delta"] == 1.0
+    assert set(agent.coeffs) == {"effort", "sustain", "weights"}
+    assert "delta_energy" in agent.coeffs["effort"]
 
 
 def test_agent_physiology_is_initialised_and_consistent():
@@ -38,6 +39,6 @@ def test_agent_physiology_is_initialised_and_consistent():
 
 def test_seeded_coeffs_are_used_when_provided():
     model = _MiniModel()
-    seeded = {"coop": {"alpha": 5.0}}
+    seeded = {"effort": {"alpha": 5.0}}
     agent = CyclistAgent(model, team_id=1, coeffs=seeded)
     assert agent.coeffs is seeded

@@ -74,6 +74,29 @@ def test_resolve_config_preserves_rider_footprint():
     assert model.config.rider_width == 0.9
 
 
+def test_breakaways_occur_with_attack_prone_coeffs():
+    from peloton import strategy
+
+    cfg = PelotonConfig(n_agents=20, n_teams=2, road_length=600.0, seed=11)
+    # Strong attack disposition: big speed weight, sharp sustain, low caution.
+    pop = []
+    for _ in range(cfg.n_agents):
+        c = strategy.default_coeffs()
+        c["weights"] = {"lambda_speed": 30.0, "lambda_energy": 0.5,
+                        "lambda_risk": 0.0, "beta_loss": 1.0}
+        c["sustain"] = {"bias": 2.0, "k_gap": 2.0}
+        pop.append(c)
+    model = PelotonModel(cfg, population=pop)
+    seen_solo = False
+    for _ in range(60):
+        if not model.running:
+            break
+        model.step()
+        if any(a.solo for a in model.agents):
+            seen_solo = True
+    assert seen_solo                              # at least one rider went off the front
+
+
 def test_race_stops_running_when_everyone_finished():
     cfg = PelotonConfig(n_agents=6, n_teams=2, road_length=40.0, seed=8)
     model = PelotonModel(cfg)
