@@ -12,14 +12,19 @@ import random
 # Mean and standard deviation for the initial coefficients. alpha = bias,
 # beta = distance, gamma = teammates, delta = energy fraction.
 DEFAULT_COEFF_MEANS = {
-    "coop":   {"alpha": 2.0, "beta": 20.0, "gamma": 0.0, "delta": -3.0},
+    "coop":   {"alpha": 2.0, "beta": 20.0, "gamma": 0.0, "delta": 5.0},
     "leave":  {"alpha": -2.0, "beta": -2.0, "gamma": 0.0, "delta": -1.0},
     "follow": {"alpha": -2.0, "beta": -2.0, "gamma": 0.0, "delta": -2.0},
 }
+# DEFAULT_COEFF_MEANS = {
+#     "coop":   {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
+#     "leave":  {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
+#     "follow": {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
+# }
 DEFAULT_COEFF_STDS = {
-    "coop":   {"alpha": 0.1, "beta": 0.1, "gamma": 0.1, "delta": 0.1},
-    "leave":  {"alpha": 0.1, "beta": 0.1, "gamma": 0.1, "delta": 0.1},
-    "follow": {"alpha": 0.1, "beta": 0.1, "gamma": 0.1, "delta": 0.1},
+    "coop":   {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
+    "leave":  {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
+    "follow": {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
 }
 
 
@@ -64,7 +69,7 @@ def contribution(agent, group, cfg) -> float:
         c["alpha"]
         + c["beta"] * _distance_frac(agent, cfg)
         + c["gamma"] * _teammates_in(agent, group)
-        + c["delta"] * _energy_frac(agent)
+        + c["delta"] * (1 - _energy_frac(agent))
     )
     # print(f"Agent {agent.unique_id} contribution z: {z:.3f} ,", "sigmoid:", sigmoid(z))
     return sigmoid(z)
