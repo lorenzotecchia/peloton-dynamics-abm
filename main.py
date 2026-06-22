@@ -38,8 +38,9 @@ def run_learning(generations: int, max_steps: int, seed: int | None, out: str) -
     pd.DataFrame(history).to_csv(out, index=False)
     print(f"Ran {generations} generations; wrote coefficient trajectory to {out}.")
     first, last = history[0], history[-1]
-    print(f"  coop.delta mean: {first['coop.delta_mean']:.3f} -> {last['coop.delta_mean']:.3f}"
-          f"  (std {first['coop.delta_std']:.3f} -> {last['coop.delta_std']:.3f})")
+    for name in ("C", "D", "B"):
+        print(f"  p_{name}: {first[f'{name}_mean']:.3f} -> {last[f'{name}_mean']:.3f}"
+              f"  (std {first[f'{name}_std']:.3f} -> {last[f'{name}_std']:.3f})")
 
 
 def main() -> None:

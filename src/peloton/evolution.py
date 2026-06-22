@@ -1,165 +1,128 @@
-"""Across-race learning of the strategy coefficients.
+"""Across-race learning via discrete-time replicator dynamics.
 
-A single race is one model run. Learning happens *between* races: score each
-rider's outcome, then nudge their coefficients toward better-performing, similar
-riders. ``run_generations`` is the outer loop carrying a population of
-coefficients across races; ``evolve`` is the update rule (Francesca's notes,
-normalised for stability):
+Each agent carries a mixed strategy σ = (p_C, p_D, p_B).  During the race,
+EGT payoffs accumulate from pairwise group interactions (strategy.group_payoffs).
+Between races, σ is updated by the standard discrete-time replicator rule:
 
-    w_ij = max(0, U_j - U_i) * sim(i, j)
-    delta(theta_i) = eta * ( sum_j w_ij theta_j / sum_j w_ij  -  theta_i ) + noise
+    Δσ_s = η · σ_s · (f_s − f̄) / |f̄|
 
-i.e. move a fraction ``eta`` of the way toward the similarity-weighted mean of
-the peers who did better. With eta <= 1 each update is a convex combination of
-current coefficients, so the population spread contracts rather than diverging
-(the raw unnormalised sum from the notes blows up: its step scales with peer
-count and utility magnitude). A rider still imitates peers who did better *and*
-race like them (similar engine), which is how distinct roles can emerge.
+where f_s is the population mean payoff of strategy s this race, f̄ = σ · f is
+the agent's expected payoff, and η = learning_rate.  A mutation term (evo_noise)
+blends each σ toward the uniform distribution to prevent strategy extinction.
+
+Distinct roles (cooperator, defector, breakaway specialist) emerge when the
+payoff matrix creates selective pressure for strategy differentiation.
 """
 
 import copy
-import math
 import statistics
 
+from peloton import strategy as strategy_module
 from peloton.model import PelotonModel
-
-
-# def _assign_utilities(agents, model) -> None:
-#     """Utility = finishing position (winner highest); DNF scores 0 (worst)."""
-#     rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
-#     n = len(agents)
-#     for a in agents:
-#         a.utility = (n - rank[a.unique_id]) if a.unique_id in rank else 0.0
-
-def _assign_utilities(agents, model) -> None:
-    """Utility decays exponentially by finishing position; DNF = 0."""
-    rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
-
-    decay = 0.4  # smaller -> steeper decay
-
-    if not model.finish_order:
-        return None  # nessun vincitore
-
-    winner_uid = model.finish_order[0][0]
-    winner = next((a for a in agents if a.unique_id == winner_uid), None)
-    team_winner = winner.team_id
-
-    for a in agents:
-        if a.unique_id in rank:
-            pos = rank[a.unique_id]
-            a.utility = 2 * math.exp(-decay * pos)
-        else:
-            a.utility = 0.0
-        if a.team_id == team_winner:
-            a.utility += 0.0
-
-def _similarity(a, b, cfg) -> float:
-    """Gaussian on the engine difference. s_m is a monotone function of w_max10,
-    so w_max10 alone captures 'races like me' — no need to weight both."""
-    z = (a.w_max10 - b.w_max10) / (cfg.sim_scale * cfg.w_max10_std)
-    return math.exp(-0.5 * z * z)
+from peloton.strategy import N_STRATEGIES, STRATEGY_NAMES, Strategy
 
 
 def evolve(agents, model) -> None:
-    """Update every agent's coefficients in place from this race's outcomes."""
+    """Update every agent's mixed strategy in-place via replicator dynamics.
+
+    Steps:
+      1. Set each agent's utility to their accumulated EGT payoff this race.
+      2. Compute population mean fitness f_s for each pure strategy.
+      3. Apply the replicator update to σ_i, then add mutation.
+      4. Draw a new pure strategy from the updated σ_i for the next race.
+    """
     cfg = model.config
     rng = model.random
-    _assign_utilities(agents, model)
-    # New rule: a fraction of the worst riders copy/blend coefficients from
-    # high-performing donors. Donor selection uses stochastic acceptance
-    # (roulette-wheel) restricted to the top fraction. This drops the old
-    # similarity-weighted pull in favor of a simpler imitation mechanic.
     n = len(agents)
     if n == 0:
         return
 
-    snapshot = [copy.deepcopy(a.coeffs) for a in agents]
+    # Step 1 — record actual payoffs as utility so _utility_stats can read them.
+    for a in agents:
+        a.utility = a.egt_payoff
 
-    # Determine donor / recipient sets by utility ranking
-    idxs = sorted(range(n), key=lambda i: agents[i].utility, reverse=True)
-    top_count = max(1, int(cfg.evo_top_frac * n))
-    bottom_count = max(1, int(cfg.evo_bottom_frac * n))
-    donor_idxs = idxs[:top_count]
-    recipient_idxs = idxs[-bottom_count:]
+    # Step 2 — population fitness per pure strategy (mean payoff across agents
+    # who played that strategy this race; strategies with no players default to 0).
+    payoff_lists: list[list[float]] = [[] for _ in range(N_STRATEGIES)]
+    for a in agents:
+        payoff_lists[int(a.strategy)].append(a.egt_payoff)
 
-    # Remove any accidental overlap (can happen for very small n)
-    donor_set = set(donor_idxs)
-    recipient_idxs = [i for i in recipient_idxs if i not in donor_set]
-    if not recipient_idxs:
-        return
+    f: list[float] = [
+        sum(vals) / len(vals) if vals else 0.0
+        for vals in payoff_lists
+    ]
 
-    donors = [(j, agents[j]) for j in donor_idxs]
+    # Step 3 — replicator update + mutation for each agent.
+    for a in agents:
+        sigma = list(a.mixed_strategy)
 
-    def _roulette_pick(donor_list):
-        # stochastic acceptance: pick uniformly then accept with prob w/max_w
-        weights = [max(0.0, d.utility) for _, d in donor_list]
-        max_w = max(weights) if weights else 0.0
-        if max_w <= 0.0:
-            return rng.choice(donor_list)[0]
-        while True:
-            j, d = rng.choice(donor_list)
-            w = max(0.0, d.utility)
-            if rng.random() < (w / max_w):
-                return j
+        # Expected fitness under the current mixed strategy: f̄ = σ · f
+        f_bar = sum(sigma[s] * f[s] for s in range(N_STRATEGIES))
 
-    mu = getattr(cfg, "imitation_mu", 1.0)
+        # Additive replicator: Δσ_s = η · σ_s · (f_s − f̄) / |f̄|
+        # The |f̄| denominator normalises the step size so η is scale-invariant.
+        denom = max(abs(f_bar), 1e-6)
+        new_sigma = [
+            sigma[s] + cfg.learning_rate * sigma[s] * (f[s] - f_bar) / denom
+            for s in range(N_STRATEGIES)
+        ]
 
-    for i in recipient_idxs:
-        a = agents[i]
-        donor_j = _roulette_pick(donors)
-        for key, params in a.coeffs.items():
-            for param in params:
-                theta_i = snapshot[i][key][param]
-                theta_d = snapshot[donor_j][key][param]
-                # Blend toward donor and add small Gaussian mutation
-                a.coeffs[key][param] = (1 - mu) * theta_i + mu * theta_d + rng.gauss(0.0, cfg.evo_noise)
+        # Mutation: blend toward uniform to prevent strategy extinction.
+        mu = cfg.evo_noise
+        uniform = 1.0 / N_STRATEGIES
+        new_sigma = [
+            (1.0 - mu) * max(v, 0.0) + mu * uniform
+            for v in new_sigma
+        ]
+
+        # Normalise to a valid probability vector.
+        total = sum(new_sigma)
+        a.mixed_strategy = [v / total for v in new_sigma]
+
+        # Step 4 — sample pure strategy for the next race.
+        a.strategy = strategy_module.sample_strategy(a.mixed_strategy, rng)
 
 
-def _coeff_stats(riders) -> dict:
-    """Flat ``{key.param_mean, key.param_std}`` across riders.
+def _strategy_stats(riders) -> dict:
+    """Population statistics of mixed strategies and pure-strategy frequencies.
 
-    Flat keys drop straight into a DataFrame; plotting the means per generation
-    shows whether coefficients converge, and the stds show how much the
-    population spreads into distinct roles.
+    Returns flat keys ``{C,D,B}_mean``, ``{C,D,B}_std``, ``{C,D,B}_freq``
+    ready to write into a DataFrame row and plot with plot_learning.py.
     """
-    stats = {}
-    for key, params in riders[0].coeffs.items():       # coop / leave / follow
-        for param in params:
-            vals = [r.coeffs[key][param] for r in riders]
-            stats[f"{key}.{param}_mean"] = statistics.mean(vals)
-            stats[f"{key}.{param}_std"] = statistics.pstdev(vals)
+    stats: dict = {}
+    n = len(riders)
+    for i, name in enumerate(STRATEGY_NAMES):
+        probs = [r.mixed_strategy[i] for r in riders]
+        stats[f"{name}_mean"] = statistics.mean(probs)
+        stats[f"{name}_std"]  = statistics.pstdev(probs)
+        stats[f"{name}_freq"] = sum(1 for r in riders if int(r.strategy) == i) / n
     return stats
 
 
 def _utility_stats(riders) -> dict:
-    """Utility statistics: mean, std, min, max across riders after a race.
-    
-    Captures how spread out performance was and whether learning improves
-    the average population utility (better strategy -> higher utility).
-    """
+    """Distribution of EGT payoffs (= utilities) across all riders."""
     utilities = [r.utility for r in riders]
     if not utilities:
         return {}
-    
     return {
-        "utility_mean": statistics.mean(utilities),
-        "utility_std": statistics.pstdev(utilities) if len(utilities) > 1 else 0.0,
-        "utility_min": min(utilities),
-        "utility_max": max(utilities),
-        "utility_range": max(utilities) - min(utilities),
+        "utility_mean":  statistics.mean(utilities),
+        "utility_std":   statistics.pstdev(utilities) if len(utilities) > 1 else 0.0,
+        "utility_min":   min(utilities),
+        "utility_max":   max(utilities),
     }
 
 
 def run_generations(n_generations: int, max_steps: int, config=None) -> list[dict]:
-    """Run ``n_generations`` races in sequence, learning between them.
+    """Run ``n_generations`` races in sequence, evolving mixed strategies between them.
 
-    Coefficients persist across races in ``population`` (one dict per spawn
-    slot); each race is seeded from it and ``evolve`` writes the updates back.
-    Returns a per-generation history: ``n_finished`` plus the mean/std of every
-    coefficient *as it raced that generation* (so generation 0 is the initial
-    population, before any learning), plus performance metrics (utilities).
+    Returns a per-generation history containing:
+    - ``generation``, ``n_finished``
+    - ``{C,D,B}_mean``, ``{C,D,B}_std``, ``{C,D,B}_freq`` — mixed strategy stats
+    - ``utility_{mean,std,min,max}`` — EGT payoff distribution this race
+
+    Generation 0 is the initial population (uniform σ), before any learning.
     """
-    population: list[dict] | None = None
+    population: list[list[float]] | None = None
     history: list[dict] = []
 
     for gen in range(n_generations):
@@ -169,15 +132,13 @@ def run_generations(n_generations: int, max_steps: int, config=None) -> list[dic
                 break
             model.step()
 
-        entry = {"generation": gen, "n_finished": model.n_finished}
-        entry.update(_coeff_stats(model.riders))       # coeffs that raced this generation
-        
-        # Call evolve, which assigns utilities internally and updates coefficients
+        entry: dict = {"generation": gen, "n_finished": model.n_finished}
+        entry.update(_strategy_stats(model.riders))
+
         evolve(model.riders, model)
-        entry.update(_utility_stats(model.riders))     # performance metrics after race
+        entry.update(_utility_stats(model.riders))
         history.append(entry)
 
-        # Deep copy so the next generation's agents never alias each other's dicts.
-        population = [copy.deepcopy(rider.coeffs) for rider in model.riders]
+        population = [list(rider.mixed_strategy) for rider in model.riders]
 
     return history

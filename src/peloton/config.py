@@ -30,12 +30,19 @@ class PelotonConfig:
     breakaway_speed_frac: float = 0.95  # solo speed of a breakaway = frac * s_m (Hoenigman)
     breakaway_cooldown_steps: int = 10  # steps during which recent breakers are kept separate from original packs
 
-    # --- Across-race evolution. ---
-    learning_rate: float = 0.1      # eta: coefficient update step
-    evo_noise: float = 0.01         # std of Gaussian noise added each generation
-    sim_scale: float = 1.0          # rider-similarity bandwidth (in std units)
-    # --- Imitation-style evolution parameters (used by new evolution rule).
-    evo_bottom_frac: float = 0.2    # fraction of worst riders to update each generation
-    evo_top_frac: float = 0.1       # fraction of top riders used as donors
-    imitation_mu: float = 0.75      # blend fraction toward donor (1.0 = full copy)
-    elite_fraction: float = 0.0     # fraction of top riders preserved unchanged
+    # --- Across-race evolution (replicator dynamics). ---
+    learning_rate: float = 0.1      # step size for the replicator update (η)
+    evo_noise: float = 0.01         # mutation: blend fraction toward uniform each generation
+
+    # --- EGT payoff matrix (row = my strategy, col = opponent's strategy). ---
+    # Strategies: C=COOPERATE, D=DEFECT, B=BREAKAWAY (indices 0/1/2).
+    # C/D subgame follows Prisoner's Dilemma: T > R > P > S.
+    payoff_cc: float = 3.0   # R — mutual cooperation reward
+    payoff_cd: float = 0.0   # S — sucker: cooperate while opponent defects
+    payoff_cb: float = 1.5   # cooperate while opponent breaks away (left at the front)
+    payoff_dc: float = 5.0   # T — temptation: defect while opponent cooperates
+    payoff_dd: float = 1.0   # P — mutual defection punishment
+    payoff_db: float = 2.5   # defect while opponent breaks away (conserve, stay safe)
+    payoff_bc: float = 4.0   # break away while opponent cooperates (group maintained)
+    payoff_bd: float = 4.5   # break away while opponent defects (nobody chases)
+    payoff_bb: float = 0.5   # mutual breakaway (shared wind, crowded escape)

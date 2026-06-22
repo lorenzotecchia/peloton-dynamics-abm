@@ -3,6 +3,7 @@ from mesa.space import ContinuousSpace
 
 from peloton.agent import CyclistAgent
 from peloton.config import PelotonConfig
+from peloton.strategy import Strategy, N_STRATEGIES
 
 
 class _MiniModel(Model):
@@ -22,9 +23,13 @@ def test_agent_has_team_and_default_strategy_state():
     assert agent.team_id == 2
     assert agent.solo is False
     assert agent.utility == 0.0
-    # Fresh agent carries an independent copy of the default coefficients.
-    assert set(agent.coeffs) == {"coop", "leave", "follow"}
-    assert agent.coeffs["coop"]["delta"] == 1.0
+    assert agent.egt_payoff == 0.0
+    # Default mixed strategy is the uniform prior.
+    assert len(agent.mixed_strategy) == N_STRATEGIES
+    assert abs(sum(agent.mixed_strategy) - 1.0) < 1e-10
+    assert all(abs(p - 1.0 / N_STRATEGIES) < 1e-10 for p in agent.mixed_strategy)
+    # Pure strategy is drawn from that distribution.
+    assert isinstance(agent.strategy, Strategy)
 
 
 def test_agent_physiology_is_initialised_and_consistent():
@@ -36,8 +41,10 @@ def test_agent_physiology_is_initialised_and_consistent():
     assert agent.w_prime == agent.w_full > 0.0   # starts fully charged
 
 
-def test_seeded_coeffs_are_used_when_provided():
+def test_seeded_mixed_strategy_is_used_when_provided():
     model = _MiniModel()
-    seeded = {"coop": {"alpha": 5.0}}
-    agent = CyclistAgent(model, team_id=1, coeffs=seeded)
-    assert agent.coeffs is seeded
+    seeded = [0.6, 0.3, 0.1]
+    agent = CyclistAgent(model, team_id=1, mixed_strategy=seeded)
+    assert agent.mixed_strategy == seeded
+    # Strategy drawn is one of the valid pure strategies.
+    assert agent.strategy in list(Strategy)

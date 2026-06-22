@@ -1,110 +1,113 @@
-"""Strategy layer: cooperation contribution and breakaway/follow decisions.
+"""Strategy layer: discrete EGT strategies and payoff matrix for the peloton.
 
-Each is a logistic of an agent's learned coefficients over race features
-(distance to finish, energy left, teammate presence), per Francesca's notes.
-The coefficients are fixed at the values below for the first race and then
-tuned across races by ``evolution.evolve``.
+Each cyclist carries a mixed strategy σ = (p_C, p_D, p_B) — a probability
+vector over three pure strategies:
+
+    C (COOPERATE) — pull at the front, share pace-setting work
+    D (DEFECT)    — sit in / free-ride on others' effort
+    B (BREAKAWAY) — attempt to escape the group solo
+
+At the start of each race a pure strategy is drawn from σ.  During the race,
+payoffs accumulate per step from pairwise interactions within each group using
+the 3×3 payoff matrix defined in PelotonConfig.  Between races, replicator
+dynamics update σ (see evolution.py).
 """
 
-import math
-import random
+from enum import IntEnum
 
-# Mean and standard deviation for the initial coefficients. alpha = bias,
-# beta = distance, gamma = teammates, delta = energy fraction.
-DEFAULT_COEFF_MEANS = {
-    "coop":   {"alpha": 2.0, "beta": 20.0, "gamma": 0.0, "delta": 5.0},
-    "leave":  {"alpha": -2.0, "beta": -2.0, "gamma": 0.0, "delta": -1.0},
-    "follow": {"alpha": -2.0, "beta": -2.0, "gamma": 0.0, "delta": -2.0},
-}
-# DEFAULT_COEFF_MEANS = {
-#     "coop":   {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
-#     "leave":  {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
-#     "follow": {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
-# }
-DEFAULT_COEFF_STDS = {
-    "coop":   {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
-    "leave":  {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
-    "follow": {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
-}
+N_STRATEGIES = 3
 
 
-def default_coeffs(rng: random.Random | None = None) -> dict:
-    """Sample a fresh set of coefficients for one rider."""
-    rng = rng or random.Random()
-    return {
-        group: {
-            name: rng.gauss(DEFAULT_COEFF_MEANS[group][name], DEFAULT_COEFF_STDS[group][name])
-            for name in params
-        }
-        for group, params in DEFAULT_COEFF_MEANS.items()
-    }
+class Strategy(IntEnum):
+    COOPERATE = 0
+    DEFECT    = 1
+    BREAKAWAY = 2
 
 
-def sigmoid(z: float) -> float:
-    # Branch by sign so math.exp never sees a large positive argument (overflow);
-    # evolution can drive coefficients large, so this must stay stable everywhere.
-    if z >= 0.0:
-        return 1.0 / (1.0 + math.exp(-z))
-    e = math.exp(z)
-    return e / (1.0 + e)
+# Short single-character labels used for CSV column headers and plots.
+STRATEGY_NAMES = ["C", "D", "B"]
+
+# ── Fixed per-strategy behaviour parameters ───────────────────────────────────
+# These are the *deterministic* action profiles for each pure strategy.
+# They replace the old continuous sigmoid coefficients.
+
+# Contribution to group speed [0, 1]: fraction of max effort a rider puts in
+# while in the pack.  Drives group_speed() and draft_factors() in group.py.
+_CONTRIBUTION = [
+    1.00,   # C — full effort at the front
+    0.05,   # D — token effort, mostly sitting in
+    0.50,   # B — half effort before the escape attempt
+]
+
+# Probability of attempting a solo breakaway each step.
+_BREAKAWAY_PROB = [
+    0.02,   # C — very rarely breaks away
+    0.05,   # D — occasional opportunistic escape
+    0.50,   # B — high chance each step
+]
+
+# Probability of chasing a breakaway that just formed.
+_FOLLOW_PROB = [
+    0.10,   # C — sometimes chases (cooperative instinct)
+    0.15,   # D — slightly more likely to chase (opportunistic)
+    0.20,   # B — most willing to follow another break
+]
 
 
-def _distance_frac(agent, cfg) -> float:
-    """Remaining distance to the finish as a fraction of the course (1 -> 0)."""
-    return max(0.0, (cfg.road_length - agent.pos[0]) / cfg.road_length)
-
-
-def _energy_frac(agent) -> float:
-    return agent.w_prime / agent.w_full if agent.w_full else 0.0
-
-
-def _teammates_in(agent, group) -> int:
-    return sum(1 for o in group if o is not agent and o.team_id == agent.team_id)
-
+# ── Public API ────────────────────────────────────────────────────────────────
 
 def contribution(agent, group, cfg) -> float:
-    """C_i = sigma(alpha + beta*d/L + gamma*T + delta*W'/W_full), in (0, 1)."""
-    c = agent.coeffs["coop"]
-    z = (
-        c["alpha"]
-        + c["beta"] * _distance_frac(agent, cfg)
-        + c["gamma"] * _teammates_in(agent, group)
-        + c["delta"] * (1 - _energy_frac(agent))
-    )
-    # print(f"Agent {agent.unique_id} contribution z: {z:.3f} ,", "sigmoid:", sigmoid(z))
-    return sigmoid(z)
+    """Rider's contribution to group speed — determined by pure strategy."""
+    return _CONTRIBUTION[int(agent.strategy)]
 
 
 def breakaway_prob(agent, v_group, cfg) -> float:
-    """theta_leave: go solo when the pack is slower than the rider could sustain.
+    """Probability of attempting a solo breakaway this step."""
+    return _BREAKAWAY_PROB[int(agent.strategy)]
 
-    sigma(alpha + beta*d/L + gamma*(0.7*s_m - v_group) + delta*W'/W_full). The
-    speed-deficit term is positive when the group dawdles below the rider's
-    anaerobic threshold, making escape attractive.
+
+def follow_prob(agent, breakaway_group, cfg) -> float:
+    """Probability of chasing a breakaway that just formed."""
+    return _FOLLOW_PROB[int(agent.strategy)]
+
+
+def group_payoffs(members, cfg) -> list[float]:
+    """Mean pairwise EGT payoff for each member from within-group interactions.
+
+    Payoff to member i = mean over all opponents j ≠ i of A[s_i, s_j],
+    where A is the 3×3 payoff matrix from the config.
+
+    Solo breakaway groups (size 1) receive zero payoff — the rider escaped
+    the interaction entirely.
     """
-    c = agent.coeffs["leave"]
-    z = (
-        c["alpha"]
-        + c["beta"] * _distance_frac(agent, cfg)
-        + c["gamma"] * (cfg.cp_fraction * agent.s_m - v_group)
-        + c["delta"] * _energy_frac(agent)
+    n = len(members)
+    if n <= 1:
+        return [0.0] * n
+
+    A = (
+        (cfg.payoff_cc, cfg.payoff_cd, cfg.payoff_cb),
+        (cfg.payoff_dc, cfg.payoff_dd, cfg.payoff_db),
+        (cfg.payoff_bc, cfg.payoff_bd, cfg.payoff_bb),
     )
-    # print(f"Agent {agent.unique_id} breakaway z: {z:.3f} ,", "sigmoid:", sigmoid(z))
-    return sigmoid(z)
+    payoffs = []
+    for i, m in enumerate(members):
+        si = int(m.strategy)
+        total = sum(A[si][int(o.strategy)] for j, o in enumerate(members) if j != i)
+        payoffs.append(total / (n - 1))
+    return payoffs
 
 
-def follow_prob(agent, breakaway, cfg) -> float:
-    """theta_follow: chase a breakaway, more readily if a teammate is in it.
+def initial_mixed_strategy() -> list[float]:
+    """Uniform prior: equal probability for every pure strategy."""
+    return [1.0 / N_STRATEGIES] * N_STRATEGIES
 
-    sigma(alpha + beta*d/L + gamma*T + delta*W'/W_full), T = teammates already away.
-    """
-    c = agent.coeffs["follow"]
-    teammates = sum(1 for o in breakaway if o.team_id == agent.team_id)
-    z = (
-        c["alpha"]
-        + c["beta"] * _distance_frac(agent, cfg)
-        + c["gamma"] * teammates
-        + c["delta"] * _energy_frac(agent)
-    )
-    # print(f"Agent {agent.unique_id} follow z: {z:.3f} ,", "sigmoid:", sigmoid(z))
-    return sigmoid(z)
+
+def sample_strategy(mixed: list[float], rng) -> Strategy:
+    """Draw a pure strategy from a mixed strategy probability vector."""
+    r = rng.random()
+    cumsum = 0.0
+    for i, p in enumerate(mixed):
+        cumsum += p
+        if r < cumsum:
+            return Strategy(i)
+    return Strategy(N_STRATEGIES - 1)

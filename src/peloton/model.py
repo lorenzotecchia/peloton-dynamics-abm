@@ -88,9 +88,8 @@ class PelotonModel(Model):
         per_row = max(1, int(config.road_width // slot_w))
         jitter = gap / 2 - 0.01
         for i in range(config.n_agents):
-            # Seed this rider's learned coefficients from the population, if any.
-            coeffs = population[i] if population is not None else None
-            agent = CyclistAgent(self, team_id=i % config.n_teams, coeffs=coeffs)
+            mixed_strategy = population[i] if population is not None else None
+            agent = CyclistAgent(self, team_id=i % config.n_teams, mixed_strategy=mixed_strategy)
             self.riders.append(agent)
             row, col = divmod(i, per_row)
             x = row * slot_l + self.random.uniform(0.0, jitter)
@@ -175,6 +174,10 @@ class PelotonModel(Model):
         contribs = [strategy.contribution(m, members, cfg) for m in members]
         v_group = group.group_speed(members, contribs, cfg)
         cf = group.draft_factors(members, contribs, cfg)
+
+        # Accumulate EGT payoffs from pairwise strategy interactions within the group.
+        for m, p in zip(members, strategy.group_payoffs(members, cfg)):
+            m.egt_payoff += p
 
         # Breakaway, then teammates deciding whether to chase it. Use a
         # short-lived cooldown so we can treat recent breakers as a separate
