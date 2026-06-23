@@ -36,22 +36,17 @@ def _assign_utilities(agents, model) -> None:
     rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
 
     decay = model.config.utility_decay  # lambda; larger -> steeper decay
+    amp = model.config.utility_amplitude  # A; winner's peak utility
 
     if not model.finish_order:
         return None  # nessun vincitore
 
-    winner_uid = model.finish_order[0][0]
-    winner = next((a for a in agents if a.unique_id == winner_uid), None)
-    team_winner = winner.team_id
-
     for a in agents:
         if a.unique_id in rank:
             pos = rank[a.unique_id]
-            a.utility = 2 * math.exp(-decay * pos)
+            a.utility = amp * math.exp(-decay * pos)
         else:
             a.utility = 0.0
-        if a.team_id == team_winner:
-            a.utility += 0.0
 
 def _similarity(a, b, cfg) -> float:
     """Gaussian on the engine difference. s_m is a monotone function of w_max10,

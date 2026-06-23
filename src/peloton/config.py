@@ -30,6 +30,7 @@ class PelotonConfig:
     breakaway_cooldown_steps: int = 10  # steps during which recent breakers are kept separate from original packs
 
     # --- Across-race evolution. ---
+    utility_amplitude: float = 2.0  # A: peak utility of the winner (scales exp curve)
     utility_decay: float = 0.4      # lambda: exp decay of position-based utility (larger = steeper)
     learning_rate: float = 0.1      # eta: coefficient update step
     evo_noise: float = 0.01         # std of Gaussian noise added each generation
