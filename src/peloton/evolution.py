@@ -20,9 +20,9 @@ race like them (similar engine), which is how distinct roles can emerge.
 import copy
 import math
 import statistics
+import numpy as np
 
 from peloton.model import PelotonModel
-
 
 # def _assign_utilities(agents, model) -> None:
 #     """Utility = finishing position (winner highest); DNF scores 0 (worst)."""
@@ -31,27 +31,34 @@ from peloton.model import PelotonModel
 #     for a in agents:
 #         a.utility = (n - rank[a.unique_id]) if a.unique_id in rank else 0.0
 
-def _assign_utilities(agents, model) -> None:
+
+def _assign_utilities(agents, model, cfg) -> None:
     """Utility decays exponentially by finishing position; DNF = 0."""
     rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
 
-    decay = model.config.utility_decay  # lambda; larger -> steeper decay
+    decay = 0.4  # smaller -> steeper decay
 
     if not model.finish_order:
         return None  # nessun vincitore
 
-    winner_uid = model.finish_order[0][0]
-    winner = next((a for a in agents if a.unique_id == winner_uid), None)
-    team_winner = winner.team_id
+    individual_utility = {}
 
     for a in agents:
         if a.unique_id in rank:
             pos = rank[a.unique_id]
-            a.utility = 2 * math.exp(-decay * pos)
+            individual_utility[a.unique_id] = math.exp(-decay * pos)
         else:
-            a.utility = 0.0
-        if a.team_id == team_winner:
-            a.utility += 0.0
+            individual_utility[a.unique_id] = 0.0
+
+    team_utility = np.zeros(cfg.n_teams)
+
+    for a in agents:
+        team_utility[a.team_id] += individual_utility[a.unique_id]
+
+    # 3. Assegna a ogni agente la utility del proprio team
+    for a in agents:
+        a.utility = team_utility[a.team_id]
+
 
 def _similarity(a, b, cfg) -> float:
     """Gaussian on the engine difference. s_m is a monotone function of w_max10,
@@ -64,7 +71,7 @@ def evolve(agents, model) -> None:
     """Update every agent's coefficients in place from this race's outcomes."""
     cfg = model.config
     rng = model.random
-    _assign_utilities(agents, model)
+    _assign_utilities(agents, model, cfg)
     # New rule: a fraction of the worst riders copy/blend coefficients from
     # high-performing donors. Donor selection uses stochastic acceptance
     # (roulette-wheel) restricted to the top fraction. This drops the old
@@ -112,7 +119,9 @@ def evolve(agents, model) -> None:
                 theta_i = snapshot[i][key][param]
                 theta_d = snapshot[donor_j][key][param]
                 # Blend toward donor and add small Gaussian mutation
-                a.coeffs[key][param] = (1 - mu) * theta_i + mu * theta_d + rng.gauss(0.0, cfg.evo_noise)
+                a.coeffs[key][param] = (
+                    (1 - mu) * theta_i + mu * theta_d + rng.gauss(0.0, cfg.evo_noise)
+                )
 
 
 def _coeff_stats(riders) -> dict:
@@ -123,7 +132,7 @@ def _coeff_stats(riders) -> dict:
     population spreads into distinct roles.
     """
     stats = {}
-    for key, params in riders[0].coeffs.items():       # coop / leave / follow
+    for key, params in riders[0].coeffs.items():  # coop / leave / follow
         for param in params:
             vals = [r.coeffs[key][param] for r in riders]
             stats[f"{key}.{param}_mean"] = statistics.mean(vals)
@@ -133,14 +142,14 @@ def _coeff_stats(riders) -> dict:
 
 def _utility_stats(riders) -> dict:
     """Utility statistics: mean, std, min, max across riders after a race.
-    
+
     Captures how spread out performance was and whether learning improves
     the average population utility (better strategy -> higher utility).
     """
     utilities = [r.utility for r in riders]
     if not utilities:
         return {}
-    
+
     return {
         "utility_mean": statistics.mean(utilities),
         "utility_std": statistics.pstdev(utilities) if len(utilities) > 1 else 0.0,
@@ -173,11 +182,11 @@ def run_generations(n_generations: int, max_steps: int, config=None) -> list[dic
         # Emergent metrics averaged over this generation's race, for SA targets.
         # (Race-mean, not final step: once everyone finishes the last step is empty.)
         entry.update(model.datacollector.get_model_vars_dataframe().mean().to_dict())
-        entry.update(_coeff_stats(model.riders))       # coeffs that raced this generation
-        
+        entry.update(_coeff_stats(model.riders))  # coeffs that raced this generation
+
         # Call evolve, which assigns utilities internally and updates coefficients
         evolve(model.riders, model)
-        entry.update(_utility_stats(model.riders))     # performance metrics after race
+        entry.update(_utility_stats(model.riders))  # performance metrics after race
         history.append(entry)
 
         # Deep copy so the next generation's agents never alias each other's dicts.
