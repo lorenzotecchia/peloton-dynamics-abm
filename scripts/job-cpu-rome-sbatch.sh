@@ -22,7 +22,9 @@ sbatch --job-name=peloton-sweep \
   --nodes=1 --ntasks=1 \
   --gpus=0 \
   --cpus-per-task=128 \
-  --time=01:00:00 \
+  --time=12:00:00 \
+  --mail-user=lorenzo.tecchia@student.uva.nl \
+  --mail-type=END,FAIL \
   --chdir="$PROJECT_ROOT" \
   --output=jobs/logs/peloton-sweep-%j.out \
   --error=jobs/logs/peloton-sweep-%j.err \

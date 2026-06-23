@@ -36,7 +36,7 @@ def _assign_utilities(agents, model, cfg) -> None:
     """Utility decays exponentially by finishing position; DNF = 0."""
     rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
 
-    decay = 0.4  # smaller -> steeper decay
+    decay = model.config.utility_decay  # lambda; larger -> steeper decay
 
     if not model.finish_order:
         return None  # nessun vincitore

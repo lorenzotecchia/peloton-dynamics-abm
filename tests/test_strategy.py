@@ -39,12 +39,12 @@ def test_default_coeffs_are_reproducible_with_seeded_rng():
     assert a == b
 
 
-def test_contribution_in_unit_interval_and_rises_with_energy():
+def test_contribution_in_unit_interval_and_rises_as_energy_drops():
     fresh = _rider(w_prime=1000.0)
     spent = _rider(w_prime=10.0)
     c_fresh = strategy.contribution(fresh, [fresh], CFG)
     c_spent = strategy.contribution(spent, [spent], CFG)
-    assert 0.0 < c_spent < c_fresh < 1.0      # delta>0: more energy -> more willing
+    assert 0.0 < c_fresh < c_spent < 1.0      # delta>0 on (1-W'/W_full): less energy -> more willing
 
 
 def test_contribution_rises_with_teammates_present():

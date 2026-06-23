@@ -63,7 +63,8 @@ def test_run_generations_records_coefficient_trajectories():
     # Mean/std recorded for every coefficient, ready to plot for convergence.
     assert "coop.delta_mean" in history[0]
     assert "coop.delta_std" in history[0]
-    # Generation 0 is the untouched initial population: all riders share the
-    # default coeffs, so the spread is zero before any learning.
-    assert history[0]["coop.delta_std"] == 0.0
-    assert history[0]["coop.delta_mean"] == 1.0     # the default value
+    # Generation 0 is the untouched initial population: riders are seeded from
+    # default_coeffs (Gaussian around the configured means), so the spread is
+    # already nonzero before any learning, and the mean sits near the default.
+    assert history[0]["coop.delta_std"] > 0.0
+    assert abs(history[0]["coop.delta_mean"] - 5.0) < 3.0  # ~DEFAULT mean, small-n scatter

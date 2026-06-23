@@ -65,7 +65,12 @@ def _teammates_in(agent, group) -> int:
 
 
 def contribution(agent, group, cfg) -> float:
-    """C_i = sigma(alpha + beta*d/L + gamma*T + delta*W'/W_full), in (0, 1)."""
+    """C_i = sigma(alpha + beta*d/L + gamma*T + delta*(1 - W'/W_full)), in (0, 1).
+
+    Note the (1 - W'/W_full): with delta>0 a *more spent* rider cooperates more
+    (takes pulls late when its own chances are gone), unlike breakaway_prob which
+    uses W'/W_full directly (a fresh rider is likelier to attack).
+    """
     c = agent.coeffs["coop"]
     z = (
         c["alpha"]
