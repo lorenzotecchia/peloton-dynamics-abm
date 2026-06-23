@@ -35,7 +35,7 @@ def _assign_utilities(agents, model) -> None:
     """Utility decays exponentially by finishing position; DNF = 0."""
     rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
 
-    decay = 0.4  # smaller -> steeper decay
+    decay = model.config.utility_decay  # lambda; larger -> steeper decay
 
     if not model.finish_order:
         return None  # nessun vincitore
@@ -170,6 +170,9 @@ def run_generations(n_generations: int, max_steps: int, config=None) -> list[dic
             model.step()
 
         entry = {"generation": gen, "n_finished": model.n_finished}
+        # Emergent metrics averaged over this generation's race, for SA targets.
+        # (Race-mean, not final step: once everyone finishes the last step is empty.)
+        entry.update(model.datacollector.get_model_vars_dataframe().mean().to_dict())
         entry.update(_coeff_stats(model.riders))       # coeffs that raced this generation
         
         # Call evolve, which assigns utilities internally and updates coefficients

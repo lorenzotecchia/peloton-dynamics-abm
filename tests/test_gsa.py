@@ -5,7 +5,7 @@ from peloton import gsa
 
 
 def _check(method, index_cols):
-    df = gsa.run_method(method, n=4, max_steps=30, replicates=1, processes=1)
+    df = gsa.run_method(method, n=4, generations=2, max_steps=30, replicates=1, processes=1)
     # one row per (metric, param)
     assert len(df) == len(gsa.METRICS) * gsa.PROBLEM["num_vars"]
     assert set(df["metric"]) == set(gsa.METRICS)

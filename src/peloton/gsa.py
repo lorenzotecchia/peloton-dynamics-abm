@@ -1,12 +1,13 @@
 """Global sensitivity analysis of the peloton model (SALib).
 
 Morris (cheap screening) and Sobol (variance-based first/total-order indices).
-Each parameter sample is run for several seed replicates and the emergent
-metrics are averaged, so simulation stochasticity doesn't leak into the indices.
+Each sample runs the across-race *evolution* loop (so utility_decay/lambda bites)
+for several seed replicates; the final generation's emergent metrics are averaged,
+so simulation stochasticity doesn't leak into the indices.
 
     # screen first, then the gold-standard decomposition
     python -m peloton.gsa --method both --samples 512 --replicates 5 \
-        --max-steps 1000 --processes $SLURM_CPUS_PER_TASK
+        --generations 30 --max-steps 1000 --processes $SLURM_CPUS_PER_TASK
 
 Writes one CSV per method to <out-dir>/gsa_<method>.csv (long form:
 metric, param, index columns). Edit PROBLEM below to change which knobs are
@@ -15,6 +16,7 @@ varied or their ranges.
 
 import argparse
 import os
+from dataclasses import replace
 from multiprocessing import Pool
 from pathlib import Path
 
@@ -25,51 +27,49 @@ from SALib.analyze.morris import analyze as morris_analyze
 from SALib.sample import sobol as sobol_sample
 from SALib.sample.morris import sample as morris_sample
 
-from peloton.model import PelotonModel
+from peloton.config import PelotonConfig
+from peloton.evolution import run_generations
 
 # The knobs under analysis and their ranges (around PelotonConfig defaults).
 PROBLEM = {
     "num_vars": 4,
-    "names": ["recovery_rate", "breakaway_speed_frac", "w_max10_mean", "k_s"],
+    "names": ["recovery_rate", "breakaway_speed_frac", "utility_decay", "k_s"],
     "bounds": [
-        [0.05, 0.20],    # recovery_rate   (default 0.1)
+        [0.05, 0.20],    # recovery_rate        (default 0.1)
         [0.85, 1.00],    # breakaway_speed_frac (default 0.95)
-        [350.0, 450.0],  # w_max10_mean    (default 400)
-        [0.70, 1.00],    # k_s             (default 0.8)
+        [0.10, 1.00],    # utility_decay/lambda (default 0.4)
+        [0.70, 1.00],    # k_s                  (default 0.8)
     ],
 }
 
-# Emergent metrics read off the model's datacollector at race end.
+# Emergent metrics, race-averaged over the final generation's race.
 METRICS = ["MeanStamina", "NumGroups", "Breakaways", "MeanExposure"]
 
 _MORRIS_LEVELS = 4
 
 
 def _evaluate(args: tuple) -> np.ndarray:
-    """Run one parameter sample for `replicates` seeds; return seed-mean metrics."""
-    row, max_steps, replicates = args
+    """Run one sample's evolution for `replicates` seeds; return seed-mean final metrics."""
+    row, generations, max_steps, replicates = args
     overrides = dict(zip(PROBLEM["names"], (float(v) for v in row)))
     out = np.empty((replicates, len(METRICS)))
     for s in range(replicates):
-        model = PelotonModel(seed=s, **overrides)
-        for _ in range(max_steps):
-            if not model.running:
-                break
-            model.step()
-        last = model.datacollector.get_model_vars_dataframe().iloc[-1]
+        cfg = replace(PelotonConfig(seed=s), **overrides)
+        last = run_generations(generations, max_steps, cfg)[-1]
         out[s] = [last[m] for m in METRICS]
     return out.mean(axis=0)
 
 
-def _simulate(X: np.ndarray, max_steps: int, replicates: int, processes) -> np.ndarray:
+def _simulate(X, generations, max_steps, replicates, processes) -> np.ndarray:
     """Evaluate every sample row in parallel -> Y of shape (n_samples, n_metrics)."""
-    tasks = [(row, max_steps, replicates) for row in X]
-    print(f"  evaluating {len(tasks)} samples x {replicates} replicates ...", flush=True)
+    tasks = [(row, generations, max_steps, replicates) for row in X]
+    print(f"  evaluating {len(tasks)} samples x {replicates} reps x {generations} gens ...",
+          flush=True)
     with Pool(processes) as pool:
         return np.array(pool.map(_evaluate, tasks))
 
 
-def run_method(method: str, n: int, max_steps: int, replicates: int, processes) -> pd.DataFrame:
+def run_method(method, n, generations, max_steps, replicates, processes) -> pd.DataFrame:
     """Sample, simulate, and estimate indices for one method. Returns long-form df."""
     if method == "morris":
         X = morris_sample(PROBLEM, n, num_levels=_MORRIS_LEVELS)
@@ -78,7 +78,7 @@ def run_method(method: str, n: int, max_steps: int, replicates: int, processes) 
     else:
         raise ValueError(f"unknown method {method!r}")
 
-    Y = _simulate(X, max_steps, replicates, processes)
+    Y = _simulate(X, generations, max_steps, replicates, processes)
 
     rows = []
     for j, metric in enumerate(METRICS):
@@ -105,7 +105,11 @@ def main() -> None:
                         "(~N*(D+2) runs); use a power of 2 for Sobol")
     p.add_argument("--replicates", type=int, default=5,
                    help="seed replicates averaged per sample (tames ABM noise)")
-    p.add_argument("--max-steps", type=int, default=1000)
+    p.add_argument("--generations", type=int, default=30,
+                   help="races per evolution run (lambda only bites across generations)")
+    p.add_argument("--max-steps", type=int, default=1000,
+                   help="steps per race; must be high enough for riders to finish "
+                        "(~600+) or utility is degenerate and lambda can't bite")
     p.add_argument("--processes", type=int, default=os.cpu_count())
     p.add_argument("--out-dir", default="data")
     args = p.parse_args()
@@ -115,7 +119,8 @@ def main() -> None:
     methods = ["morris", "sobol"] if args.method == "both" else [args.method]
     for method in methods:
         print(f"[gsa] {method} (N={args.samples})")
-        df = run_method(method, args.samples, args.max_steps, args.replicates, args.processes)
+        df = run_method(method, args.samples, args.generations, args.max_steps,
+                        args.replicates, args.processes)
         out = out_dir / f"gsa_{method}.csv"
         df.to_csv(out, index=False)
         print(f"[gsa] wrote {out}")
