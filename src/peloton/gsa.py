@@ -18,7 +18,6 @@ Parameters under analysis (default -> range; see PROBLEM for the live values):
     k_s                   0.8  -> [0.70, 1.00]   pack-speed coefficient (Martins 2013)
     breakaway_speed_frac  0.95 -> [0.85, 1.00]   solo speed as fraction of threshold
     utility_decay (lambda)0.4  -> [0.10, 1.00]   steepness of position->utility decay
-    utility_amplitude (A) 2.0  -> [1.00, 4.00]   winner's peak utility, A*exp(-lambda*pos)
 Targets (race-mean of the final generation): MeanStamina, NumGroups,
 Breakaways, MeanExposure. Fixed scenario knobs (road_length, dt, group_radius)
 are not SA-varied; set them with --road-length / --dt / --group-radius.
@@ -42,15 +41,13 @@ from peloton.evolution import run_generations
 
 # The knobs under analysis and their ranges (around PelotonConfig defaults).
 PROBLEM = {
-    "num_vars": 5,
-    "names": ["recovery_rate", "breakaway_speed_frac", "utility_decay", "k_s",
-              "utility_amplitude"],
+    "num_vars": 4,
+    "names": ["recovery_rate", "breakaway_speed_frac", "utility_decay", "k_s"],
     "bounds": [
         [0.05, 0.20],    # recovery_rate        (default 0.1)
         [0.85, 1.00],    # breakaway_speed_frac (default 0.95)
         [0.10, 1.00],    # utility_decay/lambda (default 0.4)
         [0.70, 1.00],    # k_s                  (default 0.8)
-        [1.00, 4.00],    # utility_amplitude/A  (default 2.0)
     ],
 }
 
