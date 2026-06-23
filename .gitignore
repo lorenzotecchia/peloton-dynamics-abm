@@ -13,3 +13,6 @@ docs/*
 # Generated outputs
 /data/
 /plots/
+
+# Local design notes
+context.md
