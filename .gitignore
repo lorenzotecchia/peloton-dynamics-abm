@@ -9,3 +9,7 @@ wheels/
 # Virtual environments
 .venv
 docs/*
+
+# Generated outputs
+/data/
+/plots/

@@ -34,7 +34,10 @@ def run_learning(generations: int, max_steps: int, seed: int | None, out: str) -
     """Run the across-race learning loop and dump the per-generation trajectory."""
     import pandas as pd
 
+    from pathlib import Path
+
     history = run_generations(generations, max_steps, PelotonConfig(seed=seed))
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(history).to_csv(out, index=False)
     print(f"Ran {generations} generations; wrote coefficient trajectory to {out}.")
     first, last = history[0], history[-1]
@@ -53,7 +56,7 @@ def main() -> None:
     learn_p.add_argument("--generations", type=int, default=100)
     learn_p.add_argument("--max-steps", type=int, default=400)
     learn_p.add_argument("--seed", type=int, default=None)
-    learn_p.add_argument("--out", default="learning.csv")
+    learn_p.add_argument("--out", default="data/learning.csv")
 
     sub.add_parser("solara", help="launch the interactive Solara visualization")
     sub.add_parser("test", help="run the test suite (pytest)")

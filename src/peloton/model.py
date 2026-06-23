@@ -66,7 +66,9 @@ class PelotonModel(Model):
         if rng is not None:
             overrides.setdefault("seed", rng)
         config = self._resolve_config(config, overrides)
-        super().__init__(seed=config.seed)
+        # mesa wants `rng`, not `seed` (deprecated). An int rng seeds self.random
+        # identically to the old seed= path; None draws from OS entropy.
+        super().__init__(rng=config.seed)
         self.config = config
         self.n_finished = 0
 
