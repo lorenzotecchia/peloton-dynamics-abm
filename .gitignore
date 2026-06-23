@@ -16,3 +16,6 @@ docs/*
 
 # Local design notes
 context.md
+
+# Analysis dumps (peloton.recorder / `main.py dump`)
+analysis_output/
