@@ -14,7 +14,10 @@ from mesa.visualization import SolaraViz, make_plot_component
 from mesa.visualization.user_param import Slider
 from mesa.visualization.utils import update_counter
 
+from peloton.config import PelotonConfig
 from peloton.model import PelotonModel
+
+_cfg = PelotonConfig()
 
 CAMERA_WINDOW = 120.0   # metres of road visible at once (fixed-width follow window)
 LEADER_MARGIN = 10.0    # metres of road shown ahead of the leader
@@ -108,14 +111,15 @@ def RoadView(model):
 
 
 model_params = {
-    "n_agents": Slider("Number of riders", value=30, min=5, max=100, step=5),
-    "n_teams": Slider("Number of teams", value=5, min=1, max=10, step=1),
-    "k_s": Slider("Pack speed coeff", value=0.8, min=0.7, max=1.0, step=0.05),
-    "group_radius": Slider("Group radius (m)", value=3.0, min=1.0, max=6.0, step=0.5),
+    "n_agents":     Slider("Number of riders",   value=_cfg.n_agents,     min=5,   max=100, step=5),
+    "n_teams":      Slider("Number of teams",    value=_cfg.n_teams,      min=1,   max=10,  step=1),
+    "k_s":          Slider("Pack speed coeff",   value=_cfg.k_s,          min=0.7, max=1.0, step=0.05),
+    "group_radius": Slider("Group radius (m)",   value=_cfg.group_radius, min=1.0, max=6.0, step=0.5),
 }
 
 
-def build_model(n_agents=30, n_teams=5, k_s=0.8, group_radius=3.0, config=None):
+def build_model(n_agents=_cfg.n_agents, n_teams=_cfg.n_teams,
+                k_s=_cfg.k_s, group_radius=_cfg.group_radius, config=None):
     """Factory used for the standalone app launch."""
     return PelotonModel(
         config=config,
