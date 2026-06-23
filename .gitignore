@@ -9,3 +9,6 @@ wheels/
 # Virtual environments
 .venv
 docs/*
+
+# Analysis dumps (peloton.recorder / `main.py dump`)
+analysis_output/
