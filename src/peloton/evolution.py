@@ -1,20 +1,15 @@
 """Across-race learning of the strategy coefficients.
 
 A single race is one model run. Learning happens *between* races: score each
-rider's outcome, then nudge their coefficients toward better-performing, similar
-riders. ``run_generations`` is the outer loop carrying a population of
-coefficients across races; ``evolve`` is the update rule (Francesca's notes,
-normalised for stability):
+rider's outcome, then let the weaker riders imitate a donor sampled by a logit
+choice rule over utility advantage. ``run_generations`` is the outer loop
+carrying a population of coefficients across races; ``evolve`` is the update
+rule. The recipient blends toward the chosen donor and then receives small
+Gaussian mutation.
 
-    w_ij = max(0, U_j - U_i) * sim(i, j)
-    delta(theta_i) = eta * ( sum_j w_ij theta_j / sum_j w_ij  -  theta_i ) + noise
-
-i.e. move a fraction ``eta`` of the way toward the similarity-weighted mean of
-the peers who did better. With eta <= 1 each update is a convex combination of
-current coefficients, so the population spread contracts rather than diverging
-(the raw unnormalised sum from the notes blows up: its step scales with peer
-count and utility magnitude). A rider still imitates peers who did better *and*
-race like them (similar engine), which is how distinct roles can emerge.
+The logit temperature (``config.logit_lambda``) is the bounded-rationality
+knob: large values make donor choice nearly deterministic, while small values
+flatten the choice distribution.
 """
 
 import copy
@@ -23,13 +18,6 @@ import statistics
 
 from peloton.model import PelotonModel
 
-
-# def _assign_utilities(agents, model) -> None:
-#     """Utility = finishing position (winner highest); DNF scores 0 (worst)."""
-#     rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
-#     n = len(agents)
-#     for a in agents:
-#         a.utility = (n - rank[a.unique_id]) if a.unique_id in rank else 0.0
 
 def _assign_utilities(agents, model) -> None:
     """Utility decays exponentially by finishing position; DNF = 0."""
@@ -42,7 +30,7 @@ def _assign_utilities(agents, model) -> None:
 
     winner_uid = model.finish_order[0][0]
     winner = next((a for a in agents if a.unique_id == winner_uid), None)
-    team_winner = winner.team_id
+    team_winner = getattr(winner, "team_id", None)
 
     for a in agents:
         if a.unique_id in rank:
@@ -50,14 +38,8 @@ def _assign_utilities(agents, model) -> None:
             a.utility = 2 * math.exp(-decay * pos)
         else:
             a.utility = 0.0
-        if a.team_id == team_winner:
+        if getattr(a, "team_id", None) == team_winner:
             a.utility += 0.0
-
-def _similarity(a, b, cfg) -> float:
-    """Gaussian on the engine difference. s_m is a monotone function of w_max10,
-    so w_max10 alone captures 'races like me' — no need to weight both."""
-    z = (a.w_max10 - b.w_max10) / (cfg.sim_scale * cfg.w_max10_std)
-    return math.exp(-0.5 * z * z)
 
 
 def evolve(agents, model) -> None:
@@ -65,10 +47,6 @@ def evolve(agents, model) -> None:
     cfg = model.config
     rng = model.random
     _assign_utilities(agents, model)
-    # New rule: a fraction of the worst riders copy/blend coefficients from
-    # high-performing donors. Donor selection uses stochastic acceptance
-    # (roulette-wheel) restricted to the top fraction. This drops the old
-    # similarity-weighted pull in favor of a simpler imitation mechanic.
     n = len(agents)
     if n == 0:
         return
@@ -88,25 +66,23 @@ def evolve(agents, model) -> None:
     if not recipient_idxs:
         return
 
-    donors = [(j, agents[j]) for j in donor_idxs]
-
-    def _roulette_pick(donor_list):
-        # stochastic acceptance: pick uniformly then accept with prob w/max_w
-        weights = [max(0.0, d.utility) for _, d in donor_list]
-        max_w = max(weights) if weights else 0.0
-        if max_w <= 0.0:
-            return rng.choice(donor_list)[0]
-        while True:
-            j, d = rng.choice(donor_list)
-            w = max(0.0, d.utility)
-            if rng.random() < (w / max_w):
-                return j
-
+    donors = donor_idxs
     mu = getattr(cfg, "imitation_mu", 1.0)
+    logit_lambda = max(getattr(cfg, "logit_lambda", 1.0), 1e-12)
+
+    def _logit_pick(recipient_idx):
+        recipient_utility = agents[recipient_idx].utility
+        logits = [
+            (agents[j].utility - recipient_utility) * logit_lambda
+            for j in donors
+        ]
+        max_logit = max(logits)
+        weights = [math.exp(value - max_logit) for value in logits]
+        return rng.choices(donors, weights=weights, k=1)[0]
 
     for i in recipient_idxs:
         a = agents[i]
-        donor_j = _roulette_pick(donors)
+        donor_j = _logit_pick(i)
         for key, params in a.coeffs.items():
             for param in params:
                 theta_i = snapshot[i][key][param]
