@@ -12,7 +12,7 @@ def power_required(v: float, cf_eff: float, cfg) -> float:
     """Mechanical power (W) to hold speed ``v`` (m/s) at draft factor ``cf_eff``.
 
     ``P = k_aero * cf_eff * v**3 + c_roll * v`` (Olds 1998). ``cf_eff`` is 1.0
-    when leading (full wind) and as low as ``draft_coefficient`` when sheltered.
+    when leading (full wind) and lower when sheltered.
     """
     return cfg.k_aero * cf_eff * v**3 + cfg.c_roll * v
 

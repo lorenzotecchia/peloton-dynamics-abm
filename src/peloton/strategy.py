@@ -6,22 +6,38 @@ The coefficients are fixed at the values below for the first race and then
 tuned across races by ``evolution.evolve``.
 """
 
-import copy
 import math
+import random
 
-# Fixed initial coefficients. alpha = bias, beta = distance, gamma = teammates,
-# delta = energy fraction. Mildly cooperative riders that defend a breakaway
-# more readily when fresh and near the finish.
-DEFAULT_COEFFS = {
-    "coop":   {"alpha": 0.0, "beta": 0.0, "gamma": 0.3, "delta": 1.0},
-    "leave":  {"alpha": -2.0, "beta": 0.0, "gamma": 0.5, "delta": 1.0},
-    "follow": {"alpha": -1.0, "beta": 0.0, "gamma": 1.0, "delta": 1.0},
+# Mean and standard deviation for the initial coefficients. alpha = bias,
+# beta = distance, gamma = teammates, delta = energy fraction.
+DEFAULT_COEFF_MEANS = {
+    "coop":   {"alpha": 2.0, "beta": 20.0, "gamma": 0.0, "delta": 5.0},
+    "leave":  {"alpha": -2.0, "beta": -2.0, "gamma": 0.0, "delta": -1.0},
+    "follow": {"alpha": -2.0, "beta": -2.0, "gamma": 0.0, "delta": -2.0},
+}
+# DEFAULT_COEFF_MEANS = {
+#     "coop":   {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
+#     "leave":  {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
+#     "follow": {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
+# }
+DEFAULT_COEFF_STDS = {
+    "coop":   {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
+    "leave":  {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
+    "follow": {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
 }
 
 
-def default_coeffs() -> dict:
-    """A fresh deep copy of the default coefficients (riders must not share dicts)."""
-    return copy.deepcopy(DEFAULT_COEFFS)
+def default_coeffs(rng: random.Random | None = None) -> dict:
+    """Sample a fresh set of coefficients for one rider."""
+    rng = rng or random.Random()
+    return {
+        group: {
+            name: rng.gauss(DEFAULT_COEFF_MEANS[group][name], DEFAULT_COEFF_STDS[group][name])
+            for name in params
+        }
+        for group, params in DEFAULT_COEFF_MEANS.items()
+    }
 
 
 def sigmoid(z: float) -> float:
@@ -53,8 +69,9 @@ def contribution(agent, group, cfg) -> float:
         c["alpha"]
         + c["beta"] * _distance_frac(agent, cfg)
         + c["gamma"] * _teammates_in(agent, group)
-        + c["delta"] * _energy_frac(agent)
+        + c["delta"] * (1 - _energy_frac(agent))
     )
+    # print(f"Agent {agent.unique_id} contribution z: {z:.3f} ,", "sigmoid:", sigmoid(z))
     return sigmoid(z)
 
 
@@ -72,6 +89,7 @@ def breakaway_prob(agent, v_group, cfg) -> float:
         + c["gamma"] * (cfg.cp_fraction * agent.s_m - v_group)
         + c["delta"] * _energy_frac(agent)
     )
+    # print(f"Agent {agent.unique_id} breakaway z: {z:.3f} ,", "sigmoid:", sigmoid(z))
     return sigmoid(z)
 
 
@@ -88,4 +106,5 @@ def follow_prob(agent, breakaway, cfg) -> float:
         + c["gamma"] * teammates
         + c["delta"] * _energy_frac(agent)
     )
+    # print(f"Agent {agent.unique_id} follow z: {z:.3f} ,", "sigmoid:", sigmoid(z))
     return sigmoid(z)

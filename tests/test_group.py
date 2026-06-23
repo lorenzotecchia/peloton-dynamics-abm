@@ -5,7 +5,7 @@ import pytest
 from peloton import group
 from peloton.config import PelotonConfig
 
-CFG = PelotonConfig(group_radius=3.0, k_s=0.8, draft_coefficient=0.62)
+CFG = PelotonConfig(group_radius=3.0, k_s=0.8)
 
 
 def _rider(x, s_m=12.0):
@@ -42,4 +42,4 @@ def test_draft_factors_reward_the_bigger_contributor_with_more_wind():
     cf_a, cf_b = group.draft_factors([a, b], [0.9, 0.1], CFG)   # a leads most
     assert cf_a > cf_b                                # leader sees more wind
     for cf in (cf_a, cf_b):
-        assert CFG.draft_coefficient <= cf <= 1.0
+        assert 0.0 <= cf <= 1.0

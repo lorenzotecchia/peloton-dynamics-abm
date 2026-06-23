@@ -6,6 +6,8 @@ in 1-D). Within a pack, contribution decides who leads (and so who shelters)
 and how fast the whole pack rolls.
 """
 
+import numpy as np
+
 
 def detect_groups(riders, group_radius):
     """Partition ``riders`` into packs by x-proximity. Returns a list of lists.
@@ -44,16 +46,28 @@ def group_speed(members, contribs, cfg) -> float:
     return cfg.k_s * weighted / total_c
 
 
+def mean_draft_factor_for_group(group_size) -> float:
+    """Group-size-dependent draft factor.
+
+    The values of mean_percentages are based on the work of Blocken et al [2018].
+    """
+    mean_percentages = [0.62]*2 + [0.52]*3 + [0.43]*4 + [0.39]*5 + [0.35]*6 + [0.31]*7 + [0.29]*8 + [0.27]*9 + [0.26]*10 + [0.13]*9 + [0.14]*10 + [0.08]*9 + [0.10]*10 + [0.07]*9 + [0.10]*10 + [0.07] * 9
+    draft_factor = np.mean(mean_percentages[:group_size])
+    return draft_factor
+
+
 def draft_factors(members, contribs, cfg) -> list[float]:
-    """Per-rider effective air-drag factor cf_eff in [draft_coefficient, 1].
+    """Per-rider effective air-drag factor cf_eff in [0, 1].
 
     Returns a list aligned with ``members``. Leadership fraction = C_i / sum(C):
     a rider spends that fraction of the step on the front in full wind (cf=1) and
-    the rest sheltered, so cf_eff = lead*1 + (1-lead)*draft_coefficient.
+    the rest sheltered, so cf_eff = lead*1 + (1-lead)*draft_factor.
     """
+    num_members = len(members)
+    draft_factor = mean_draft_factor_for_group(num_members)
     total_c = sum(contribs)
     out = []
     for c in contribs:
         lead = c / total_c if total_c > 0.0 else 1.0 / len(members)
-        out.append(lead + (1.0 - lead) * cfg.draft_coefficient)
+        out.append(lead + (1.0 - lead) * draft_factor)
     return out
