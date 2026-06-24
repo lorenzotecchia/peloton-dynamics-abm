@@ -14,15 +14,16 @@ from mesa.visualization import SolaraViz, make_plot_component
 from mesa.visualization.user_param import Slider
 from mesa.visualization.utils import update_counter
 
+from peloton import group as grp_mod
 from peloton.config import PelotonConfig
 from peloton.model import PelotonModel
 
 _cfg = PelotonConfig()
 
-CAMERA_WINDOW = 120.0   # metres of road visible at once (fixed-width follow window)
-LEADER_MARGIN = 10.0    # metres of road shown ahead of the leader
-DASH_PITCH = 10.0       # world-metres between dash starts on the centre line
-DASH_LEN = 4.0          # length of each centre-line dash (metres)
+CAMERA_MARGIN     = 30.0   # padding (m) added on each side of the tracked span
+MIN_CAMERA_WINDOW = 150.0  # minimum window width (m) so the view never collapses
+DASH_PITCH = 10.0          # world-metres between dash starts on the centre line
+DASH_LEN   = 4.0           # length of each centre-line dash (metres)
 
 
 def exposure_to_color(exposure: float) -> tuple[float, float, float]:
@@ -65,9 +66,30 @@ def draw_road(model, ax):
         )
         return
 
-    leader_x = max(a.pos[0] for a in agents)
-    x_hi = leader_x + LEADER_MARGIN
-    x_lo = x_hi - CAMERA_WINDOW
+    # Leading pack: non-solo grouped riders, group with highest mean x and size > 1
+    non_solo  = [a for a in agents if not a.solo and getattr(a, "break_cooldown", 0) == 0]
+    pack_groups = [g for g in grp_mod.detect_groups(non_solo, model.config.group_radius)
+                   if len(g) > 1]
+    if pack_groups:
+        lead_pack  = max(pack_groups, key=lambda g: sum(a.pos[0] for a in g) / len(g))
+        pack_front = max(a.pos[0] for a in lead_pack)
+        pack_rear  = min(a.pos[0] for a in lead_pack)
+        puller     = max(lead_pack, key=lambda a: a.exposure)
+        puller_id  = puller.unique_id
+    else:
+        pack_front = pack_rear = max(a.pos[0] for a in agents)
+        puller_id  = None
+
+    # Rank-1 rider: highest x of any agent still on the road
+    rank1_x = max(a.pos[0] for a in agents)
+
+    # Camera spans from the back of the leading pack to the rank-1 rider
+    x_lo = pack_rear  - CAMERA_MARGIN
+    x_hi = max(rank1_x, pack_front) + CAMERA_MARGIN
+    if x_hi - x_lo < MIN_CAMERA_WINDOW:
+        mid  = (x_lo + x_hi) / 2
+        x_lo = mid - MIN_CAMERA_WINDOW / 2
+        x_hi = mid + MIN_CAMERA_WINDOW / 2
     ax.set_xlim(x_lo, x_hi)
 
     # Scrolling centre-line: dashes at fixed world-x positions. As the window
@@ -88,13 +110,17 @@ def draw_road(model, ax):
         ax.axvline(cfg.road_length, color="black", linestyle="--", linewidth=1)
 
     for agent in agents:
+        is_puller = agent.unique_id == puller_id
+        exposure  = 1.0 if is_puller else agent.exposure
+        # Draw the puller at the pack's nose so readers can track the rotation.
+        draw_pos  = (pack_front, agent.pos[1]) if is_puller else agent.pos
         ax.add_patch(
             Ellipse(
-                agent.pos,
+                draw_pos,
                 width=cfg.rider_length,
                 height=cfg.rider_width,
-                facecolor=rider_color(agent.team_id, cfg.n_teams, agent.exposure),
-                edgecolor="black",
+                facecolor=rider_color(agent.team_id, cfg.n_teams, exposure),
+                edgecolor="white" if is_puller else "black",
                 linewidth=0.3,
             )
         )
