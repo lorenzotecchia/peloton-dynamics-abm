@@ -68,13 +68,18 @@ def _evaluate(args: tuple) -> np.ndarray:
 
 
 def _simulate(X, generations, max_steps, replicates, processes,
-              dump_dir=None, parquet=False) -> np.ndarray:
-    """Evaluate every sample row in parallel -> Y of shape (n_samples, n_metrics)."""
+              dump_dir=None, parquet=False, row_offset=0) -> np.ndarray:
+    """Evaluate every sample row in parallel -> Y of shape (n_samples, n_metrics).
+
+    row_offset shifts sample indices so dump directory names stay globally unique
+    when X is a chunk of a larger design matrix.
+    """
     tasks = [
-        (row, generations, max_steps, replicates, i, dump_dir, parquet)
+        (row, generations, max_steps, replicates, row_offset + i, dump_dir, parquet)
         for i, row in enumerate(X)
     ]
-    print(f"  evaluating {len(tasks)} samples x {replicates} reps x {generations} gens ...",
+    print(f"  evaluating rows {row_offset}..{row_offset + len(X) - 1} "
+          f"({len(tasks)} samples x {replicates} reps x {generations} gens) ...",
           flush=True)
     with Pool(processes) as pool:
         return np.array(pool.map(_evaluate, tasks))
@@ -119,6 +124,10 @@ def run_method(method, n, generations, max_steps, replicates, processes,
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--mode", choices=["full", "sample", "evaluate", "merge"], default="full",
+                   help="full=sample+evaluate+analyze in one process (default); "
+                        "sample=generate X.npy only; evaluate=simulate a row chunk; "
+                        "merge=combine Y chunks and compute indices")
     p.add_argument("--method", choices=["morris", "sobol", "both"], default="both")
     p.add_argument("--samples", type=int, default=512,
                    help="SALib N: Morris trajectories (~N*(D+1) runs) / Sobol base "
@@ -139,13 +148,69 @@ def main() -> None:
                         "subdirs are created as <dump-dir>/<job_id>/<method>/s{N:05d}_r{R:02d}/")
     p.add_argument("--parquet", action="store_true",
                    help="write agent dumps as parquet instead of csv (recommended for GSA scale)")
+    # --- split-job args (used by sample / evaluate / merge modes) ---
+    p.add_argument("--x-file",    default=None, help="path to X.npy (sample output / evaluate+merge input)")
+    p.add_argument("--y-out",     default=None, help="path to save Y chunk .npy (evaluate mode)")
+    p.add_argument("--row-start", type=int, default=0,   help="first row of X to evaluate (evaluate mode)")
+    p.add_argument("--row-end",   type=int, default=None, help="exclusive end row of X (evaluate mode)")
+    p.add_argument("--merge-dir", default=None, help="directory containing Y_*.npy chunks (merge mode)")
     args = p.parse_args()
 
+    # ── sample mode: generate Sobol design matrix and save ───────────────────
+    if args.mode == "sample":
+        X = sobol_sample.sample(PROBLEM, args.samples, calc_second_order=False)
+        Path(args.x_file).parent.mkdir(parents=True, exist_ok=True)
+        np.save(args.x_file, X)
+        pd.DataFrame(X, columns=PROBLEM["names"]).to_csv(
+            str(args.x_file).replace(".npy", "_index.csv"), index_label="sample_idx"
+        )
+        print(f"[gsa] saved X {X.shape} → {args.x_file}")
+        return
+
+    # ── evaluate mode: simulate a contiguous chunk of X rows ─────────────────
+    if args.mode == "evaluate":
+        X      = np.load(args.x_file)
+        r_end  = args.row_end if args.row_end is not None else len(X)
+        X_chunk = X[args.row_start:r_end]
+        dump_dir = args.dump_dir  # caller passes fully constructed path
+        if dump_dir:
+            Path(dump_dir).mkdir(parents=True, exist_ok=True)
+        Y_chunk = _simulate(X_chunk, args.generations, args.max_steps, args.replicates,
+                            args.processes, dump_dir=dump_dir, parquet=args.parquet,
+                            row_offset=args.row_start)
+        Path(args.y_out).parent.mkdir(parents=True, exist_ok=True)
+        np.save(args.y_out, Y_chunk)
+        print(f"[gsa] saved Y chunk {Y_chunk.shape} → {args.y_out}")
+        return
+
+    # ── merge mode: combine Y chunks and compute Sobol indices ───────────────
+    if args.mode == "merge":
+        X           = np.load(args.x_file)
+        chunk_files = sorted(Path(args.merge_dir).glob("Y_*.npy"),
+                             key=lambda f: int(f.stem.split("_")[1]))
+        Y = np.concatenate([np.load(f) for f in chunk_files], axis=0)
+        assert Y.shape == (len(X), len(METRICS)), \
+            f"Y shape {Y.shape} does not match X rows {len(X)} x metrics {len(METRICS)}"
+        out_dir = Path(args.out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        rows = []
+        for j, metric in enumerate(METRICS):
+            Si   = sobol_analyze.analyze(PROBLEM, Y[:, j], calc_second_order=False)
+            cols = {"S1": Si["S1"], "S1_conf": Si["S1_conf"],
+                    "ST": Si["ST"], "ST_conf": Si["ST_conf"]}
+            for i, param in enumerate(PROBLEM["names"]):
+                rows.append({"metric": metric, "param": param,
+                             **{k: v[i] for k, v in cols.items()}})
+        out = out_dir / "gsa_sobol.csv"
+        pd.DataFrame(rows).to_csv(out, index=False)
+        print(f"[gsa] merged {len(chunk_files)} chunks ({Y.shape[0]} rows) → {out}")
+        return
+
+    # ── full mode (default): sample + evaluate + analyze in one process ───────
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     methods = ["morris", "sobol"] if args.method == "both" else [args.method]
 
-    # Resolve job-level dump directory: {dump_dir}/{job_id}/
     job_dump_dir = None
     if args.dump_dir:
         job_id   = os.environ.get("SLURM_JOB_ID", f"local_{datetime.now():%Y%m%d_%H%M%S}")
