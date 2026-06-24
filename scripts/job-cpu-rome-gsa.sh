@@ -51,12 +51,11 @@ mkdir -p "$PROJECT_ROOT/jobs/logs"
 sbatch --job-name=peloton-gsa \
   --partition=rome \
   --nodes=1 --ntasks=1 \
-  --gpus=0 \
   --cpus-per-task=128 \
   --time=04:00:00 \
   --chdir="$PROJECT_ROOT" \
-  --output=jobs/logs/peloton-gsa-%j.out \
-  --error=jobs/logs/peloton-gsa-%j.err \
+  --output="$PROJECT_ROOT/jobs/logs/peloton-gsa-%j.out" \
+  --error="$PROJECT_ROOT/jobs/logs/peloton-gsa-%j.err" \
   --export=ALL,METHOD="$METHOD",SAMPLES="$SAMPLES",REPLICATES="$REPLICATES",GENERATIONS="$GENERATIONS",MAX_STEPS="$MAX_STEPS",DUMP_BASE="$DUMP_BASE" \
   <<'EOF'
 #!/usr/bin/env bash
