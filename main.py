@@ -50,7 +50,7 @@ def main() -> None:
     run_p.add_argument("--max-steps", type=int, default=200)
 
     learn_p = sub.add_parser("learn", help="run many races in sequence, learning between them")
-    learn_p.add_argument("--generations", type=int, default=100)
+    learn_p.add_argument("--generations", type=int, default=200)
     learn_p.add_argument("--max-steps", type=int, default=10000)
     learn_p.add_argument("--seed", type=int, default=None)
     learn_p.add_argument("--out", default="learning.csv")
