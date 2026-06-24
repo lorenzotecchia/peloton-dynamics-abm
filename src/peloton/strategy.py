@@ -11,20 +11,25 @@ import random
 
 # Mean and standard deviation for the initial coefficients. alpha = bias,
 # beta = distance, gamma = teammates, delta = energy fraction.
-DEFAULT_COEFF_MEANS = {
-    "coop":   {"alpha": 2.0, "beta": 20.0, "gamma": 0.0, "delta": 5.0},
-    "leave":  {"alpha": -2.0, "beta": -2.0, "gamma": 0.0, "delta": -1.0},
-    "follow": {"alpha": -2.0, "beta": -2.0, "gamma": 0.0, "delta": -2.0},
-}
 # DEFAULT_COEFF_MEANS = {
-#     "coop":   {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
-#     "leave":  {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
-#     "follow": {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
+#     "coop":   {"alpha": 2.0, "beta": 20.0, "gamma": 0.0, "delta": 5.0},
+#     "leave":  {"alpha": -2.0, "beta": -2.0, "gamma": 0.0, "delta": -1.0},
+#     "follow": {"alpha": -2.0, "beta": -2.0, "gamma": 0.0, "delta": -2.0},
+# }
+DEFAULT_COEFF_MEANS = {
+    "coop":   {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
+    "leave":  {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
+    "follow": {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
+}
+# DEFAULT_COEFF_STDS = {
+#     "coop":   {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
+#     "leave":  {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
+#     "follow": {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
 # }
 DEFAULT_COEFF_STDS = {
-    "coop":   {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
-    "leave":  {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
-    "follow": {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
+    "coop":   {"alpha": 5.0, "beta": 5.0, "gamma": 5.0, "delta": 5.0},
+    "leave":  {"alpha": 5.0, "beta": 5.0, "gamma": 5.0, "delta": 5.0},
+    "follow": {"alpha": 5.0, "beta": 5.0, "gamma": 5.0, "delta": 5.0},
 }
 
 
