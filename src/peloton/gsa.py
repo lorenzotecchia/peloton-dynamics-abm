@@ -127,9 +127,11 @@ def main() -> None:
                    help="seed replicates averaged per sample (tames ABM noise)")
     p.add_argument("--generations", type=int, default=30,
                    help="races per evolution run (lambda only bites across generations)")
-    p.add_argument("--max-steps", type=int, default=1000,
+    p.add_argument("--max-steps", type=int, default=2000,
                    help="steps per race; must be high enough for riders to finish "
-                        "(~600+) or utility is degenerate and lambda can't bite")
+                        "across the full sweep range. With road_length=200000 m and "
+                        "dt=30 s, k_s=0.70 (sweep minimum) needs ~1470 steps for "
+                        "mean-power riders; 2000 gives safe headroom for slow/exhausted riders")
     p.add_argument("--processes", type=int, default=os.cpu_count())
     p.add_argument("--out-dir", default="data")
     p.add_argument("--dump-dir", default=None,

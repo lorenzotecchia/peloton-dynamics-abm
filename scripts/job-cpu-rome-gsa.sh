@@ -31,7 +31,7 @@
 #
 # Usage (from the project root, on a login node):
 #   bash scripts/job-cpu-rome-gsa.sh [METHOD] [SAMPLES] [REPLICATES] [GENERATIONS] [MAX_STEPS] [DUMP_BASE]
-# Defaults: METHOD=both, SAMPLES=512, REPLICATES=5, GENERATIONS=30, MAX_STEPS=1000,
+# Defaults: METHOD=both, SAMPLES=512, REPLICATES=5, GENERATIONS=30, MAX_STEPS=2000,
 #           DUMP_BASE=/projects/prjs2142/gsa-agent-dump-per-run
 # Indices land in data/gsa_<method>.csv; logs in jobs/logs/.
 
@@ -41,7 +41,7 @@ METHOD="${1:-both}"
 SAMPLES="${2:-512}"
 REPLICATES="${3:-5}"
 GENERATIONS="${4:-30}"
-MAX_STEPS="${5:-1000}"
+MAX_STEPS="${5:-2000}"
 DUMP_BASE="${6:-/projects/prjs2142/gsa-agent-dump-per-run}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
