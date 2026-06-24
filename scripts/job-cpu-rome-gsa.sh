@@ -37,6 +37,14 @@
 
 set -euo pipefail
 
+# Guard: this is a submission wrapper, not a job script. Running it with
+# 'sbatch' directly causes BASH_SOURCE to resolve inside Slurm's spool dir.
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    echo "ERROR: run this script with 'bash', not 'sbatch':" >&2
+    echo "  bash scripts/job-cpu-rome-gsa.sh [METHOD] [SAMPLES] ..." >&2
+    exit 1
+fi
+
 METHOD="${1:-both}"
 SAMPLES="${2:-512}"
 REPLICATES="${3:-5}"
