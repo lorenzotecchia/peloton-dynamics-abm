@@ -7,7 +7,8 @@
 # Per-run agent state dumps land under DUMP_BASE, organised as:
 #
 #   <DUMP_BASE>/
-#   └── <SLURM_JOB_ID>/
+#   └── <GIT_SHORT_HASH>/
+#       └── <SLURM_JOB_ID>/
 #       ├── meta.json                         job-level: method, N, G, R, steps, PROBLEM bounds, METRICS
 #       ├── morris/
 #       │   ├── sample_index.csv              design matrix: sample_idx → param values (one row per sample)
@@ -56,6 +57,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 mkdir -p "$PROJECT_ROOT/jobs/logs"
 
+GIT_HASH=$(git -C "$PROJECT_ROOT" rev-parse --short HEAD)
+DUMP_DIR="${DUMP_BASE}/${GIT_HASH}"
+
 SUBMIT_OUT=$(sbatch --job-name=peloton-gsa \
   --partition=rome \
   --nodes=1 --ntasks=1 \
@@ -65,7 +69,7 @@ SUBMIT_OUT=$(sbatch --job-name=peloton-gsa \
   --chdir="$PROJECT_ROOT" \
   --output="$PROJECT_ROOT/jobs/logs/peloton-gsa-%j.out" \
   --error="$PROJECT_ROOT/jobs/logs/peloton-gsa-%j.err" \
-  --export=ALL,METHOD="$METHOD",SAMPLES="$SAMPLES",REPLICATES="$REPLICATES",GENERATIONS="$GENERATIONS",MAX_STEPS="$MAX_STEPS",DUMP_BASE="$DUMP_BASE" \
+  --export=ALL,METHOD="$METHOD",SAMPLES="$SAMPLES",REPLICATES="$REPLICATES",GENERATIONS="$GENERATIONS",MAX_STEPS="$MAX_STEPS",DUMP_DIR="$DUMP_DIR" \
   <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -79,7 +83,7 @@ module load 2025
 module load Python/3.13.5-GCCcore-14.3.0
 export PATH="$HOME/.local/bin:$PATH"
 
-echo "[job] method=$METHOD samples=$SAMPLES replicates=$REPLICATES generations=$GENERATIONS max_steps=$MAX_STEPS procs=$SLURM_CPUS_PER_TASK dump_base=$DUMP_BASE"
+echo "[job] method=$METHOD samples=$SAMPLES replicates=$REPLICATES generations=$GENERATIONS max_steps=$MAX_STEPS procs=$SLURM_CPUS_PER_TASK dump_dir=$DUMP_DIR"
 uv run python -m peloton.gsa \
   --method      "$METHOD" \
   --samples     "$SAMPLES" \
@@ -88,14 +92,14 @@ uv run python -m peloton.gsa \
   --max-steps   "$MAX_STEPS" \
   --processes   "$SLURM_CPUS_PER_TASK" \
   --out-dir     data \
-  --dump-dir    "$DUMP_BASE" \
+  --dump-dir    "$DUMP_DIR" \
   --parquet
 EOF
 )
 
 JOB_ID=$(echo "$SUBMIT_OUT" | awk '{print $NF}')
 LOG="$PROJECT_ROOT/jobs/logs/peloton-gsa-${JOB_ID}.out"
-echo "$SUBMIT_OUT"
+echo "$SUBMIT_OUT  (git $GIT_HASH → $DUMP_DIR)"
 echo "[tail] waiting for log: $LOG"
 until [[ -f "$LOG" ]]; do sleep 2; done
 echo "[tail] following $LOG  (Ctrl-C to detach; job continues)"
