@@ -5,10 +5,10 @@ from dataclasses import dataclass
 class PelotonConfig:
     """Tunable parameters for the peloton simulation. All distances in metres."""
 
-    road_length: float = 2000.0     # finish line position (x_max)
+    road_length: float = 200000.0     # finish line position (x_max)
     road_width: float = 8.0         # lateral extent of the road (y_max)
-    n_agents: int = 50
-    n_teams: int = 1
+    n_agents: int = 100
+    n_teams: int = 10
     rider_length: float = 1.8       # longitudinal footprint, for the viz ellipse + spawn grid
     rider_width: float = 0.6        # lateral footprint, for the viz ellipse + spawn grid
     seed: int | None = None
@@ -21,7 +21,7 @@ class PelotonConfig:
     k_aero: float = 0.18*5            # aerodynamic coefficient in P = k*cf*v^3 + c_roll*v
     c_roll: float = 3.0             # rolling-resistance coefficient
     ref_speed_frac: float = 0.9     # v_hat = ref_speed_frac * s_m, for stamina init
-    dt: float = 1.0                 # seconds of race per model step
+    dt: float = 30.0                 # seconds of race per model step
 
     # --- Grouping / pack speed / drafting / breakaway. ---
     group_radius: float = 3.0       # "<3 m apart => same group"
