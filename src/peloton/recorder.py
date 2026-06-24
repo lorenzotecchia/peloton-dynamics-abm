@@ -42,13 +42,13 @@ def _rider_state(agent, active, solo_packs_cache, cfg) -> str:
     return "grouped" if agent._group_size > 1 else "isolated"
 
 
-def record_run(config: PelotonConfig, max_steps: int) -> dict:
+def record_run(config: PelotonConfig, max_steps: int, population=None) -> dict:
     """Run a single race, capturing the full per-step per-agent state.
 
     Returns a dict of plain Python rows / tables ready to be written out, so this
     function has no I/O or pandas dependency itself (easy to unit-test or reuse).
     """
-    model = PelotonModel(config=config)
+    model = PelotonModel(config=config, population=population)
     cfg = model.config
     k_aero = cfg.k_aero
     dt = cfg.dt
@@ -179,11 +179,12 @@ ANALYSIS_MENU = [
 ]
 
 
-def dump_run(config: PelotonConfig, max_steps: int, out_dir: str, parquet: bool) -> str:
+def dump_run(config: PelotonConfig, max_steps: int, out_dir: str, parquet: bool,
+             population=None) -> str:
     """Run a race and write the full analysis bundle to ``out_dir``. Returns the dir."""
     import pandas as pd
 
-    data = record_run(config, max_steps)
+    data = record_run(config, max_steps, population=population)
     os.makedirs(out_dir, exist_ok=True)
 
     tables = {

@@ -150,7 +150,8 @@ def _utility_stats(riders) -> dict:
     }
 
 
-def run_generations(n_generations: int, max_steps: int, config=None) -> list[dict]:
+def run_generations(n_generations: int, max_steps: int, config=None,
+                    return_population: bool = False):
     """Run ``n_generations`` races in sequence, learning between them.
 
     Coefficients persist across races in ``population`` (one dict per spawn
@@ -183,4 +184,6 @@ def run_generations(n_generations: int, max_steps: int, config=None) -> list[dic
         # Deep copy so the next generation's agents never alias each other's dicts.
         population = [copy.deepcopy(rider.coeffs) for rider in model.riders]
 
+    if return_population:
+        return history, population
     return history

@@ -15,8 +15,10 @@ varied or their ranges.
 """
 
 import argparse
+import json
 import os
 from dataclasses import replace
+from datetime import datetime
 from multiprocessing import Pool
 from pathlib import Path
 
@@ -29,6 +31,7 @@ from SALib.sample.morris import sample as morris_sample
 
 from peloton.config import PelotonConfig
 from peloton.evolution import run_generations
+from peloton.recorder import dump_run
 
 # The knobs under analysis and their ranges (around PelotonConfig defaults).
 PROBLEM = {
@@ -50,26 +53,35 @@ _MORRIS_LEVELS = 4
 
 def _evaluate(args: tuple) -> np.ndarray:
     """Run one sample's evolution for `replicates` seeds; return seed-mean final metrics."""
-    row, generations, max_steps, replicates = args
+    row, generations, max_steps, replicates, sample_idx, dump_dir, parquet = args
     overrides = dict(zip(PROBLEM["names"], (float(v) for v in row)))
     out = np.empty((replicates, len(METRICS)))
     for s in range(replicates):
         cfg = replace(PelotonConfig(seed=s), **overrides)
-        last = run_generations(generations, max_steps, cfg)[-1]
-        out[s] = [last[m] for m in METRICS]
+        history, population = run_generations(generations, max_steps, cfg,
+                                              return_population=True)
+        out[s] = [history[-1][m] for m in METRICS]
+        if dump_dir is not None:
+            run_dir = os.path.join(dump_dir, f"s{sample_idx:05d}_r{s:02d}")
+            dump_run(cfg, max_steps, run_dir, parquet, population=population)
     return out.mean(axis=0)
 
 
-def _simulate(X, generations, max_steps, replicates, processes) -> np.ndarray:
+def _simulate(X, generations, max_steps, replicates, processes,
+              dump_dir=None, parquet=False) -> np.ndarray:
     """Evaluate every sample row in parallel -> Y of shape (n_samples, n_metrics)."""
-    tasks = [(row, generations, max_steps, replicates) for row in X]
+    tasks = [
+        (row, generations, max_steps, replicates, i, dump_dir, parquet)
+        for i, row in enumerate(X)
+    ]
     print(f"  evaluating {len(tasks)} samples x {replicates} reps x {generations} gens ...",
           flush=True)
     with Pool(processes) as pool:
         return np.array(pool.map(_evaluate, tasks))
 
 
-def run_method(method, n, generations, max_steps, replicates, processes) -> pd.DataFrame:
+def run_method(method, n, generations, max_steps, replicates, processes,
+               dump_dir=None, parquet=False) -> pd.DataFrame:
     """Sample, simulate, and estimate indices for one method. Returns long-form df."""
     if method == "morris":
         X = morris_sample(PROBLEM, n, num_levels=_MORRIS_LEVELS)
@@ -78,7 +90,15 @@ def run_method(method, n, generations, max_steps, replicates, processes) -> pd.D
     else:
         raise ValueError(f"unknown method {method!r}")
 
-    Y = _simulate(X, generations, max_steps, replicates, processes)
+    if dump_dir is not None:
+        Path(dump_dir).mkdir(parents=True, exist_ok=True)
+        # Write the design matrix so analysts can look up parameter values by sample index.
+        pd.DataFrame(X, columns=PROBLEM["names"]).to_csv(
+            os.path.join(dump_dir, "sample_index.csv"), index_label="sample_idx"
+        )
+
+    Y = _simulate(X, generations, max_steps, replicates, processes,
+                  dump_dir=dump_dir, parquet=parquet)
 
     rows = []
     for j, metric in enumerate(METRICS):
@@ -112,15 +132,50 @@ def main() -> None:
                         "(~600+) or utility is degenerate and lambda can't bite")
     p.add_argument("--processes", type=int, default=os.cpu_count())
     p.add_argument("--out-dir", default="data")
+    p.add_argument("--dump-dir", default=None,
+                   help="root directory for per-run agent-state dumps; "
+                        "subdirs are created as <dump-dir>/<job_id>/<method>/s{N:05d}_r{R:02d}/")
+    p.add_argument("--parquet", action="store_true",
+                   help="write agent dumps as parquet instead of csv (recommended for GSA scale)")
     args = p.parse_args()
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     methods = ["morris", "sobol"] if args.method == "both" else [args.method]
+
+    # Resolve job-level dump directory: {dump_dir}/{job_id}/
+    job_dump_dir = None
+    if args.dump_dir:
+        job_id   = os.environ.get("SLURM_JOB_ID", f"local_{datetime.now():%Y%m%d_%H%M%S}")
+        job_dump_dir = os.path.join(args.dump_dir, job_id)
+        Path(job_dump_dir).mkdir(parents=True, exist_ok=True)
+        meta = {
+            "job_id":       job_id,
+            "created":      datetime.now().isoformat(timespec="seconds"),
+            "method":       args.method,
+            "samples":      args.samples,
+            "generations":  args.generations,
+            "replicates":   args.replicates,
+            "max_steps":    args.max_steps,
+            "problem":      PROBLEM,
+            "metrics":      METRICS,
+            "layout": (
+                "{dump_dir}/{job_id}/meta.json  — this file\n"
+                "{dump_dir}/{job_id}/{method}/sample_index.csv  — design matrix (row=sample)\n"
+                "{dump_dir}/{job_id}/{method}/s{N:05d}_r{R:02d}/  — final-gen race dump\n"
+                "    config.json, agent_timeseries, model_timeseries, agent_meta, finish_order, manifest.json"
+            ),
+        }
+        with open(os.path.join(job_dump_dir, "meta.json"), "w") as f:
+            json.dump(meta, f, indent=2)
+        print(f"[gsa] dump root: {job_dump_dir}/")
+
     for method in methods:
         print(f"[gsa] {method} (N={args.samples})")
+        method_dump = os.path.join(job_dump_dir, method) if job_dump_dir else None
         df = run_method(method, args.samples, args.generations, args.max_steps,
-                        args.replicates, args.processes)
+                        args.replicates, args.processes,
+                        dump_dir=method_dump, parquet=args.parquet)
         out = out_dir / f"gsa_{method}.csv"
         df.to_csv(out, index=False)
         print(f"[gsa] wrote {out}")
