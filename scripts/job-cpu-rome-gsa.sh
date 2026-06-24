@@ -63,7 +63,7 @@ SUBMIT_OUT=$(sbatch --job-name=peloton-gsa \
   --nodes=1 --ntasks=1 \
   --gpus=0 \
   --cpus-per-task=128 \
-  --time=04:00:00 \
+  --time=08:00:00 \
   --chdir="$PROJECT_ROOT" \
   --output="$PROJECT_ROOT/jobs/logs/peloton-gsa-%j.out" \
   --error="$PROJECT_ROOT/jobs/logs/peloton-gsa-%j.err" \
