@@ -59,6 +59,7 @@ mkdir -p "$PROJECT_ROOT/jobs/logs"
 SUBMIT_OUT=$(sbatch --job-name=peloton-gsa \
   --partition=rome \
   --nodes=1 --ntasks=1 \
+  --gpus=0 \
   --cpus-per-task=128 \
   --time=04:00:00 \
   --chdir="$PROJECT_ROOT" \
