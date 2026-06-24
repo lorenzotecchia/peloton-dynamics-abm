@@ -81,7 +81,7 @@ module load 2025
 module load Python/3.13.5-GCCcore-14.3.0
 export PATH="$HOME/.local/bin:$PATH"
 
-DUMP_DIR="${DUMP_BASE}/${SLURM_JOB_ID}-${GIT_HASH}"
+DUMP_DIR="${DUMP_BASE}/${SLURM_JOB_ID}-${GIT_HASH}-${METHOD}"
 echo "[job] method=$METHOD samples=$SAMPLES replicates=$REPLICATES generations=$GENERATIONS max_steps=$MAX_STEPS procs=$SLURM_CPUS_PER_TASK dump_dir=$DUMP_DIR"
 uv run python -m peloton.gsa \
   --method      "$METHOD" \
@@ -98,8 +98,14 @@ EOF
 
 JOB_ID=$(echo "$SUBMIT_OUT" | awk '{print $NF}')
 LOG="$PROJECT_ROOT/jobs/logs/peloton-gsa-${JOB_ID}.out"
-echo "$SUBMIT_OUT  (git $GIT_HASH → ${DUMP_BASE}/${JOB_ID}-${GIT_HASH})"
-echo "[tail] waiting for log: $LOG"
-until [[ -f "$LOG" ]]; do sleep 2; done
-echo "[tail] following $LOG  (Ctrl-C to detach; job continues)"
-tail -f "$LOG"
+echo "$SUBMIT_OUT  (git $GIT_HASH → ${DUMP_BASE}/${JOB_ID}-${GIT_HASH}-${METHOD})"
+echo "[log] $LOG"
+
+if [[ "${NO_TAIL:-0}" == "1" ]]; then
+    echo "[tail] skipped (NO_TAIL=1); to follow: tail -f $LOG"
+else
+    echo "[tail] waiting for log: $LOG"
+    until [[ -f "$LOG" ]]; do sleep 2; done
+    echo "[tail] following $LOG  (Ctrl-C to detach; job continues)"
+    tail -f "$LOG"
+fi
