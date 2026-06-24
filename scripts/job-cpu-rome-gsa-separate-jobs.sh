@@ -32,12 +32,14 @@ T_START=$SECONDS
 # NO_TAIL=1 suppresses tail -f in the child script; both jobs submit and return immediately.
 export NO_TAIL=1
 
-bash "$SCRIPT_DIR/job-cpu-rome-gsa.sh" morris "$SAMPLES" "$REPLICATES" "$GENERATIONS" "$MAX_STEPS" "$DUMP_BASE"
-bash "$SCRIPT_DIR/job-cpu-rome-gsa.sh" sobol  "$SAMPLES" "$REPLICATES" "$GENERATIONS" "$MAX_STEPS" "$DUMP_BASE"
+MORRIS_OUT=$(bash "$SCRIPT_DIR/job-cpu-rome-gsa.sh" morris "$SAMPLES" "$REPLICATES" "$GENERATIONS" "$MAX_STEPS" "$DUMP_BASE")
+echo "$MORRIS_OUT"
+MORRIS_JOB=$(echo "$MORRIS_OUT" | grep "Submitted batch job" | awk '{print $4}')
 
-# Collect the two job IDs from the most recent entries in jobs/logs/.
-MORRIS_JOB=$(ls -t "$SCRIPT_DIR/../jobs/logs"/peloton-gsa-*.out 2>/dev/null | sed -n '2p' | grep -oP '(?<=peloton-gsa-)\d+')
-SOBOL_JOB=$(ls  -t "$SCRIPT_DIR/../jobs/logs"/peloton-gsa-*.out 2>/dev/null | sed -n '1p' | grep -oP '(?<=peloton-gsa-)\d+')
+SOBOL_OUT=$(bash "$SCRIPT_DIR/job-cpu-rome-gsa.sh" sobol "$SAMPLES" "$REPLICATES" "$GENERATIONS" "$MAX_STEPS" "$DUMP_BASE")
+echo "$SOBOL_OUT"
+SOBOL_JOB=$(echo "$SOBOL_OUT" | grep "Submitted batch job" | awk '{print $4}')
+
 LOGS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/jobs/logs"
 echo "[poll] waiting for jobs ${MORRIS_JOB} (morris) and ${SOBOL_JOB} (sobol) to finish ..."
 echo "[tail] to follow logs manually:"
