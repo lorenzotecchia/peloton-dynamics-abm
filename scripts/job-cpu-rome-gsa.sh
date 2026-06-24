@@ -5,11 +5,29 @@
 # fanning samples across the node's 128 cores.
 #
 # Per-run agent state dumps land under DUMP_BASE, organised as:
-#   <DUMP_BASE>/<SLURM_JOB_ID>/meta.json
-#   <DUMP_BASE>/<SLURM_JOB_ID>/<method>/sample_index.csv
-#   <DUMP_BASE>/<SLURM_JOB_ID>/<method>/s<NNNNN>_r<RR>/
-#       config.json  agent_timeseries.parquet  model_timeseries.parquet
-#       agent_meta.csv  finish_order.csv  manifest.json
+#
+#   <DUMP_BASE>/
+#   └── <SLURM_JOB_ID>/
+#       ├── meta.json                         job-level: method, N, G, R, steps, PROBLEM bounds, METRICS
+#       ├── morris/
+#       │   ├── sample_index.csv              design matrix: sample_idx → param values (one row per sample)
+#       │   ├── s00000_r00/                   sample 0, replicate 0 (seed=0)
+#       │   │   ├── config.json               full PelotonConfig including sampled parameter values
+#       │   │   ├── agent_timeseries.parquet  per-step per-agent state for the final-generation race
+#       │   │   ├── model_timeseries.parquet  model-level reporters per step
+#       │   │   ├── agent_meta.csv            static physiology + strategy coeffs + finish outcome
+#       │   │   ├── finish_order.csv          rank, rider uid, finish step/time
+#       │   │   └── manifest.json             row counts, file descriptions, analysis hints
+#       │   ├── s00000_r01/  ...
+#       │   └── s<NNNNN>_r<RR>/  ...
+#       └── sobol/
+#           ├── sample_index.csv
+#           └── s<NNNNN>_r<RR>/  ...
+#
+# To locate runs by parameter value: read sample_index.csv, filter the rows you
+# want, then navigate to s{sample_idx:05d}_r{replicate:02d}/ for those samples.
+# The agent dump reflects the evolved population from the final generation (not a
+# fresh population), so strategy coefficients represent learned behaviour.
 #
 # Usage (from the project root, on a login node):
 #   bash scripts/job-cpu-rome-gsa.sh [METHOD] [SAMPLES] [REPLICATES] [GENERATIONS] [MAX_STEPS] [DUMP_BASE]
