@@ -126,14 +126,23 @@ def _utility_stats(riders) -> dict:
     }
 
 
+def _mean_finishing_time(model) -> float | None:
+    """Mean finishing time in seconds for riders that completed the race."""
+    if not model.finish_order:
+        return None
+    finish_times = [step * model.config.dt for _uid, step in model.finish_order]
+    return statistics.mean(finish_times)
+
+
 def run_generations(n_generations: int, max_steps: int, config=None) -> list[dict]:
     """Run ``n_generations`` races in sequence, learning between them.
 
     Coefficients persist across races in ``population`` (one dict per spawn
     slot); each race is seeded from it and ``evolve`` writes the updates back.
-    Returns a per-generation history: ``n_finished`` plus the mean/std of every
-    coefficient *as it raced that generation* (so generation 0 is the initial
-    population, before any learning), plus performance metrics (utilities).
+    Returns a per-generation history: ``n_finished``, ``mean_finishing_time``,
+    plus the mean/std of every coefficient *as it raced that generation* (so
+    generation 0 is the initial population, before any learning), plus
+    performance metrics (utilities).
     """
     population: list[dict] | None = None
     history: list[dict] = []
@@ -145,7 +154,11 @@ def run_generations(n_generations: int, max_steps: int, config=None) -> list[dic
                 break
             model.step()
 
-        entry = {"generation": gen, "n_finished": model.n_finished}
+        entry = {
+            "generation": gen,
+            "n_finished": model.n_finished,
+            "mean_finishing_time": _mean_finishing_time(model),
+        }
         entry.update(_coeff_stats(model.riders))       # coeffs that raced this generation
         
         # Call evolve, which assigns utilities internally and updates coefficients
