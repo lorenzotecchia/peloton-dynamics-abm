@@ -36,7 +36,7 @@ class PelotonConfig:
 
     # --- Imitation-style evolution parameters (used by new evolution rule).
     evo_bottom_frac: float = 0.2    # fraction of worst riders to update each generation
-    evo_top_frac: float = 0.8       # fraction of top riders used as donors
+    evo_top_frac: float = 1.0       # fraction of top riders used as donors
     imitation_mu: float = 1.0       # blend fraction toward donor (1.0 = full copy)
     logit_lambda: float = 1.0      # bounded-rationality noise in donor choice
     elite_fraction: float = 0.0     # fraction of top riders preserved unchanged
