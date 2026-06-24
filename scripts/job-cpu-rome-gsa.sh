@@ -56,7 +56,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 mkdir -p "$PROJECT_ROOT/jobs/logs"
 
-sbatch --job-name=peloton-gsa \
+SUBMIT_OUT=$(sbatch --job-name=peloton-gsa \
   --partition=rome \
   --nodes=1 --ntasks=1 \
   --cpus-per-task=128 \
@@ -90,3 +90,12 @@ uv run python -m peloton.gsa \
   --dump-dir    "$DUMP_BASE" \
   --parquet
 EOF
+)
+
+JOB_ID=$(echo "$SUBMIT_OUT" | awk '{print $NF}')
+LOG="$PROJECT_ROOT/jobs/logs/peloton-gsa-${JOB_ID}.out"
+echo "$SUBMIT_OUT"
+echo "[tail] waiting for log: $LOG"
+until [[ -f "$LOG" ]]; do sleep 2; done
+echo "[tail] following $LOG  (Ctrl-C to detach; job continues)"
+tail -f "$LOG"
