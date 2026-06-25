@@ -8,7 +8,8 @@
 #   bash scripts/job-cpu-rome-gsa-morris.sh [SAMPLES] [REPLICATES] [GENERATIONS] \
 #                                           [MAX_STEPS] [ROAD_LENGTH] [DT] [GROUP_RADIUS]
 # Defaults: SAMPLES=512, REPLICATES=10, GENERATIONS=150, MAX_STEPS=2500,
-#           ROAD_LENGTH=100000 (100 km), DT=60 (1 min), GROUP_RADIUS=200.
+#           ROAD_LENGTH=10000 (10 km), DT=2 (2 s), GROUP_RADIUS=3.
+# The scenario defaults (ROAD_LENGTH/DT/GROUP_RADIUS) match PelotonConfig.
 # Morris does ~SAMPLES*(D+1) runs (D=4 params), each over GENERATIONS races x
 # REPLICATES seeds. Indices land in data/gsa_morris.csv; logs in jobs/logs/.
 
@@ -18,9 +19,9 @@ SAMPLES="${1:-512}"
 REPLICATES="${2:-10}"
 GENERATIONS="${3:-150}"
 MAX_STEPS="${4:-2500}"
-ROAD_LENGTH="${5:-100000}"
-DT="${6:-60}"
-GROUP_RADIUS="${7:-200}"
+ROAD_LENGTH="${5:-10000}"
+DT="${6:-2}"
+GROUP_RADIUS="${7:-3}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
