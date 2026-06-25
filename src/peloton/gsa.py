@@ -129,15 +129,18 @@ def _evaluate(args: tuple) -> np.ndarray:
     return out.mean(axis=0)
 
 
-def _simulate(X, names, generations, max_steps, replicates, processes, y_path, base) -> np.ndarray:
+def _simulate(X, names, generations, max_steps, replicates, processes, base,
+              y_path=None) -> np.ndarray:
     """Evaluate every sample row in parallel -> Y of shape (n_samples, n_metrics).
 
-    Checkpoints each completed sample to ``y_path`` as it finishes, so a killed
-    or timed-out job resumes from disk instead of recomputing. Append-only +
-    flush, so the worst case loses at most the one sample in flight.
+    With ``y_path`` (single-node ``full`` mode), each completed sample is
+    checkpointed to it (append + flush) so a killed/timed-out job resumes from
+    disk instead of recomputing; the column count is validated against METRICS on
+    resume. Without ``y_path`` (chunked array ``evaluate`` mode) the rows are
+    mapped in memory and returned -- the array task writes the Y chunk itself.
     """
     done = []
-    if y_path.exists():
+    if y_path is not None and y_path.exists():
         arr = np.loadtxt(y_path, delimiter=",", ndmin=2)
         # Guard against resuming onto a checkpoint from an incompatible METRICS set
         # (e.g. one written before time/stamina-spent targets were added): the column
@@ -156,6 +159,9 @@ def _simulate(X, names, generations, max_steps, replicates, processes, y_path, b
     tasks = [(row, names, generations, max_steps, replicates, base) for row in X[start:]]
     print(f"  evaluating {len(tasks)} samples x {replicates} reps x {generations} gens ...",
           flush=True)
+    if y_path is None:
+        with Pool(processes) as pool:
+            return np.array(pool.map(_evaluate, tasks))
     with Pool(processes) as pool, open(y_path, "a") as fh:
         for row in pool.imap(_evaluate, tasks):   # ordered: row k appended after k-1
             fh.write(",".join(repr(float(v)) for v in row) + "\n")
@@ -164,28 +170,18 @@ def _simulate(X, names, generations, max_steps, replicates, processes, y_path, b
     return np.array(done)
 
 
-def run_method(method, n, generations, max_steps, replicates, processes,
-               out_dir, base=None) -> pd.DataFrame:
-    """Sample, simulate, and estimate indices for one method. Returns long-form df."""
-    problem = PROBLEMS[method]  # Morris and Sobol vary different knob sets.
-    # Pin the design to disk: Morris sampling isn't reproducible across runs, so a
-    # resume must reuse the exact X that the checkpointed Y rows were computed for.
-    x_path = Path(out_dir) / f".gsa_{method}_X.npy"
-    if x_path.exists():
-        X = np.load(x_path)
-    else:
-        if method == "morris":
-            X = morris_sample(problem, n, num_levels=_MORRIS_LEVELS)
-        elif method == "sobol":
-            X = sobol_sample.sample(problem, n, calc_second_order=False)
-        else:
-            raise ValueError(f"unknown method {method!r}")
-        np.save(x_path, X)
+def _sample_design(method, n) -> np.ndarray:
+    """Draw the SALib design matrix X for one method (Morris trajectories / Sobol base)."""
+    problem = PROBLEMS[method]
+    if method == "morris":
+        return morris_sample(problem, n, num_levels=_MORRIS_LEVELS)
+    if method == "sobol":
+        return sobol_sample.sample(problem, n, calc_second_order=False)
+    raise ValueError(f"unknown method {method!r}")
 
-    y_path = Path(out_dir) / f".gsa_{method}_Y.csv"
-    Y = _simulate(X, problem["names"], generations, max_steps, replicates, processes,
-                  y_path, base or {})
 
+def _analyze_rows(method, problem, X, Y) -> list[dict]:
+    """Estimate sensitivity indices from design X and outputs Y -> long-form rows."""
     rows = []
     for j, metric in enumerate(METRICS):
         if method == "morris":
@@ -199,12 +195,36 @@ def run_method(method, n, generations, max_steps, replicates, processes,
         for i, param in enumerate(problem["names"]):
             rows.append({"metric": metric, "param": param,
                          **{k: v[i] for k, v in cols.items()}})
-    return pd.DataFrame(rows)
+    return rows
+
+
+def run_method(method, n, generations, max_steps, replicates, processes,
+               out_dir, base=None) -> pd.DataFrame:
+    """Sample, simulate, and estimate indices for one method. Returns long-form df."""
+    problem = PROBLEMS[method]  # Morris and Sobol vary different knob sets.
+    # Pin the design to disk: Morris sampling isn't reproducible across runs, so a
+    # resume must reuse the exact X that the checkpointed Y rows were computed for.
+    x_path = Path(out_dir) / f".gsa_{method}_X.npy"
+    if x_path.exists():
+        X = np.load(x_path)
+    else:
+        X = _sample_design(method, n)
+        np.save(x_path, X)
+
+    y_path = Path(out_dir) / f".gsa_{method}_Y.csv"
+    Y = _simulate(X, problem["names"], generations, max_steps, replicates, processes,
+                  base or {}, y_path=y_path)
+    return pd.DataFrame(_analyze_rows(method, problem, X, Y))
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--mode", choices=["full", "sample", "evaluate", "merge"], default="full",
+                   help="full=sample+evaluate+analyze in one process (default); the rest "
+                        "split a run across a Slurm array: sample=write X.npy only; "
+                        "evaluate=simulate a row chunk of X -> Y chunk; merge=combine "
+                        "Y chunks and write the indices CSV")
     p.add_argument("--method", choices=["morris", "sobol", "both"], default="both")
     p.add_argument("--samples", type=int, default=512,
                    help="SALib N: Morris trajectories (~N*(D+1) runs) / Sobol base "
@@ -225,11 +245,73 @@ def main() -> None:
     p.add_argument("--dt", type=float, default=None, help="seconds of race per step (e.g. 60)")
     p.add_argument("--group-radius", type=float, default=None,
                    help="longitudinal pack radius in m; scale with v*dt for coarse dt")
+    # --- split-job args (used by sample / evaluate / merge modes) ---
+    p.add_argument("--x-file", default=None,
+                   help="path to X.npy (written by sample; read by evaluate + merge)")
+    p.add_argument("--y-out", default=None, help="path to save the Y chunk .npy (evaluate)")
+    p.add_argument("--row-start", type=int, default=0, help="first X row to evaluate (evaluate)")
+    p.add_argument("--row-end", type=int, default=None, help="exclusive end X row (evaluate)")
+    p.add_argument("--merge-dir", default=None,
+                   help="directory holding the Y_<start>_<end>.npy chunks (merge)")
     args = p.parse_args()
 
     base = {k: v for k, v in (("road_length", args.road_length), ("dt", args.dt),
                               ("group_radius", args.group_radius)) if v is not None}
 
+    # ── sample mode: draw X for one method and persist it (login node, seconds) ──
+    if args.mode == "sample":
+        if args.method == "both":
+            raise SystemExit("--mode sample needs a single --method (morris|sobol)")
+        X = _sample_design(args.method, args.samples)
+        xp = Path(args.x_file)
+        xp.parent.mkdir(parents=True, exist_ok=True)
+        np.save(xp, X)
+        pd.DataFrame(X, columns=PROBLEMS[args.method]["names"]).to_csv(
+            xp.with_name(xp.stem + "_index.csv"), index_label="sample_idx")
+        print(f"[gsa] {args.method}: saved X {X.shape} -> {xp}")
+        print(f"[gsa] n_rows={len(X)}")  # the array wrapper reads this to size chunks
+        return
+
+    # ── evaluate mode: simulate a contiguous chunk of X rows -> Y chunk ──────────
+    if args.mode == "evaluate":
+        if args.method == "both":
+            raise SystemExit("--mode evaluate needs a single --method (morris|sobol)")
+        X = np.load(args.x_file)
+        r_end = args.row_end if args.row_end is not None else len(X)
+        X_chunk = X[args.row_start:r_end]
+        Y_chunk = _simulate(X_chunk, PROBLEMS[args.method]["names"], args.generations,
+                            args.max_steps, args.replicates, args.processes, base)
+        yp = Path(args.y_out)
+        yp.parent.mkdir(parents=True, exist_ok=True)
+        np.save(yp, Y_chunk)
+        print(f"[gsa] {args.method}: saved Y chunk {Y_chunk.shape} "
+              f"(rows {args.row_start}..{r_end}) -> {yp}")
+        return
+
+    # ── merge mode: concat the Y chunks (row order) and write the indices CSV ────
+    if args.mode == "merge":
+        if args.method == "both":
+            raise SystemExit("--mode merge needs a single --method (morris|sobol)")
+        problem = PROBLEMS[args.method]
+        X = np.load(args.x_file)
+        chunk_files = sorted(Path(args.merge_dir).glob("Y_*.npy"),
+                             key=lambda f: int(f.stem.split("_")[1]))
+        if not chunk_files:
+            raise FileNotFoundError(f"no Y_*.npy chunks found in {args.merge_dir}")
+        Y = np.concatenate([np.load(f) for f in chunk_files], axis=0)
+        if Y.shape != (len(X), len(METRICS)):
+            raise ValueError(
+                f"merged Y {Y.shape} != expected ({len(X)}, {len(METRICS)}); a chunk is "
+                f"missing or overlapping in {args.merge_dir}.")
+        out_dir = Path(args.out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out = out_dir / f"gsa_{args.method}.csv"
+        pd.DataFrame(_analyze_rows(args.method, problem, X, Y)).to_csv(out, index=False)
+        print(f"[gsa] {args.method}: merged {len(chunk_files)} chunks "
+              f"({Y.shape[0]} rows) -> {out}")
+        return
+
+    # ── full mode (default): sample + evaluate + analyze in one process ──────────
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     methods = ["morris", "sobol"] if args.method == "both" else [args.method]
