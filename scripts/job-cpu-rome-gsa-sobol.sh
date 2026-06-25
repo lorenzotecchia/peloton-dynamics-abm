@@ -48,5 +48,16 @@ ERR_FILE="$PROJECT_ROOT/jobs/logs/peloton-gsa-sobol-${JOB_ID}.err"
 echo "Submitted Sobol GSA as job $JOB_ID"
 echo "  stdout: $OUT_FILE"
 echo "  stderr: $ERR_FILE"
-echo "Tailing stdout (Ctrl-C stops the tail, NOT the job; waits while queued)..."
-exec tail -F "$OUT_FILE"
+echo "Waiting for job $JOB_ID to start and create its log (appears once it leaves"
+echo "the queue and begins running)..."
+while [[ ! -e "$OUT_FILE" ]]; do
+  # Bail out if the job left the queue without ever producing a log (failed to start).
+  if [[ -z "$(squeue -h -j "$JOB_ID" -o '%T' 2>/dev/null)" ]]; then
+    echo "Job $JOB_ID is no longer queued but $OUT_FILE never appeared." >&2
+    echo "Check 'sacct -j $JOB_ID' and $ERR_FILE." >&2
+    exit 1
+  fi
+  sleep 2
+done
+echo "Log is live. Tailing stdout (Ctrl-C stops the tail, NOT the job)..."
+exec tail -n +1 -F "$OUT_FILE"
