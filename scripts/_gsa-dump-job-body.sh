@@ -26,11 +26,12 @@ GIT_HASH="$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
 OUT_DIR="${GSA_OUT_BASE}/${SLURM_JOB_ID:-local}-${GIT_HASH}-${METHOD}-dump"
 mkdir -p "$OUT_DIR"
 
-# PARQUET=1 -> write Parquet instead of CSV (smaller for the big per-step tables).
+# PARQUET=1 (default) -> Parquet instead of CSV (smaller for the big per-step
+# tables); set PARQUET=0 for CSV.
 PARQUET_FLAG=()
-[[ "${PARQUET:-0}" == "1" ]] && PARQUET_FLAG=(--parquet)
+[[ "${PARQUET:-1}" == "1" ]] && PARQUET_FLAG=(--parquet)
 
-echo "[job] method=$METHOD samples=$SAMPLES generations=$GENERATIONS max_steps=$MAX_STEPS road_length=$ROAD_LENGTH dt=$DT group_radius=$GROUP_RADIUS procs=$SLURM_CPUS_PER_TASK parquet=${PARQUET:-0}"
+echo "[job] method=$METHOD samples=$SAMPLES generations=$GENERATIONS max_steps=$MAX_STEPS road_length=$ROAD_LENGTH dt=$DT group_radius=$GROUP_RADIUS procs=$SLURM_CPUS_PER_TASK parquet=${PARQUET:-1}"
 echo "[job] out_dir=$OUT_DIR"
 uv run python -m peloton.gsa_dump \
   --method "$METHOD" \

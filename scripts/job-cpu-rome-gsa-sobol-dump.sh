@@ -7,22 +7,23 @@
 # Usage (from the project root, on a login node):
 #   bash scripts/job-cpu-rome-gsa-sobol-dump.sh [SAMPLES] [GENERATIONS] \
 #                                [MAX_STEPS] [ROAD_LENGTH] [DT] [GROUP_RADIUS]
-# Defaults: SAMPLES=1024, GENERATIONS=10, MAX_STEPS=2000, ROAD_LENGTH=10000 (10 km),
+# Defaults: SAMPLES=64, GENERATIONS=150, MAX_STEPS=2000, ROAD_LENGTH=10000 (10 km),
 #           DT=2 (2 s), GROUP_RADIUS=3. No replication (every race uses seed 0).
 # Sobol draws ~SAMPLES*(D+2) design rows (D=5; use a power of 2 for SAMPLES), each
-# run over GENERATIONS races and dumped in full: SAMPLES=1024 -> ~7168 rows x 10
-# gens ~= 72k races, ~48 min on 128 cores (measured ~12 min at SAMPLES=256; ~12
-# min headroom under the 1-hour wall). Completed sample dirs persist as they
-# finish, so a wall-clock kill only loses the samples still in flight. Output
-# goes to
+# run over GENERATIONS races and dumped in full: SAMPLES=64 -> ~448 rows x 150
+# gens ~= 67k races, ~45 min on 128 cores (runtime tracks rows*gens; calibrated
+# from ~12 min at 7168 rows x 10 gens). Fewer parameter points but a full
+# 150-generation learning trajectory dumped per point. Completed sample dirs
+# persist as they finish, so a wall-clock kill only loses the samples still in
+# flight. Output goes to
 # <GSA_OUT_BASE>/<SLURM JOB ID>-<GIT HASH>-sobol-dump/ (GSA_OUT_BASE defaults to
-# /gpfs/work5/0/prjs2142/gsa-agent-dump-per-run). Set PARQUET=1 to write Parquet
-# instead of CSV. Logs in jobs/logs/.
+# /gpfs/work5/0/prjs2142/gsa-agent-dump-per-run). Writes Parquet by default
+# (smaller); set PARQUET=0 for CSV. Logs in jobs/logs/.
 
 set -euo pipefail
 
-SAMPLES="${1:-1024}"
-GENERATIONS="${2:-10}"
+SAMPLES="${1:-64}"
+GENERATIONS="${2:-150}"
 MAX_STEPS="${3:-2000}"
 ROAD_LENGTH="${4:-10000}"
 DT="${5:-2}"
@@ -41,7 +42,7 @@ JOB_ID="$(sbatch --parsable --job-name=peloton-gsa-sobol-dump \
   --chdir="$PROJECT_ROOT" \
   --output=jobs/logs/peloton-gsa-sobol-dump-%j.out \
   --error=jobs/logs/peloton-gsa-sobol-dump-%j.err \
-  --export=ALL,METHOD=sobol,SAMPLES="$SAMPLES",GENERATIONS="$GENERATIONS",MAX_STEPS="$MAX_STEPS",ROAD_LENGTH="$ROAD_LENGTH",DT="$DT",GROUP_RADIUS="$GROUP_RADIUS",PARQUET="${PARQUET:-0}" \
+  --export=ALL,METHOD=sobol,SAMPLES="$SAMPLES",GENERATIONS="$GENERATIONS",MAX_STEPS="$MAX_STEPS",ROAD_LENGTH="$ROAD_LENGTH",DT="$DT",GROUP_RADIUS="$GROUP_RADIUS",PARQUET="${PARQUET:-1}" \
   "$SCRIPT_DIR/_gsa-dump-job-body.sh")"
 JOB_ID="${JOB_ID%%;*}"  # --parsable may append ";cluster"; keep just the id
 
