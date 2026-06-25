@@ -30,7 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 mkdir -p "$PROJECT_ROOT/jobs/logs"
 
-sbatch --job-name=peloton-gsa-sobol \
+JOB_ID="$(sbatch --parsable --job-name=peloton-gsa-sobol \
   --partition=rome \
   --nodes=1 --ntasks=1 \
   --gpus=0 \
@@ -40,4 +40,13 @@ sbatch --job-name=peloton-gsa-sobol \
   --output=jobs/logs/peloton-gsa-sobol-%j.out \
   --error=jobs/logs/peloton-gsa-sobol-%j.err \
   --export=ALL,METHOD=sobol,SAMPLES="$SAMPLES",REPLICATES="$REPLICATES",GENERATIONS="$GENERATIONS",MAX_STEPS="$MAX_STEPS",ROAD_LENGTH="$ROAD_LENGTH",DT="$DT",GROUP_RADIUS="$GROUP_RADIUS" \
-  "$SCRIPT_DIR/_gsa-job-body.sh"
+  "$SCRIPT_DIR/_gsa-job-body.sh")"
+JOB_ID="${JOB_ID%%;*}"  # --parsable may append ";cluster"; keep just the id
+
+OUT_FILE="$PROJECT_ROOT/jobs/logs/peloton-gsa-sobol-${JOB_ID}.out"
+ERR_FILE="$PROJECT_ROOT/jobs/logs/peloton-gsa-sobol-${JOB_ID}.err"
+echo "Submitted Sobol GSA as job $JOB_ID"
+echo "  stdout: $OUT_FILE"
+echo "  stderr: $ERR_FILE"
+echo "Tailing stdout (Ctrl-C stops the tail, NOT the job; waits while queued)..."
+exec tail -F "$OUT_FILE"
