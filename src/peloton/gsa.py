@@ -113,6 +113,12 @@ METRICS = [
 
 _MORRIS_LEVELS = 4
 
+# Sobol second-order (pairwise S2) indices. One switch drives both the sampling
+# and the analysis so they can never disagree: True makes the Sobol design
+# N*(2D+2) rows (vs N*(D+2)) and emits a gsa_sobol_S2.csv of pairwise indices
+# alongside the first/total-order gsa_sobol.csv. Morris is unaffected.
+SOBOL_SECOND_ORDER = True
+
 
 def _evaluate(args: tuple) -> np.ndarray:
     """Run one sample's evolution for `replicates` seeds; return seed-mean final metrics."""
@@ -176,31 +182,51 @@ def _sample_design(method, n) -> np.ndarray:
     if method == "morris":
         return morris_sample(problem, n, num_levels=_MORRIS_LEVELS)
     if method == "sobol":
-        return sobol_sample.sample(problem, n, calc_second_order=False)
+        return sobol_sample.sample(problem, n, calc_second_order=SOBOL_SECOND_ORDER)
     raise ValueError(f"unknown method {method!r}")
 
 
-def _analyze_rows(method, problem, X, Y) -> list[dict]:
-    """Estimate sensitivity indices from design X and outputs Y -> long-form rows."""
-    rows = []
+def _analyze(method, problem, X, Y):
+    """Estimate sensitivity indices from design X and outputs Y.
+
+    Returns ``(rows, s2_rows)``: ``rows`` is the long-form first/total-order
+    (Sobol) or mu*/sigma (Morris) table; ``s2_rows`` holds the Sobol pairwise
+    second-order indices (one row per parameter pair) when SOBOL_SECOND_ORDER is
+    on, else an empty list.
+    """
+    names = problem["names"]
+    rows, s2_rows = [], []
     for j, metric in enumerate(METRICS):
         if method == "morris":
             Si = morris_analyze(problem, X, Y[:, j], num_levels=_MORRIS_LEVELS)
             cols = {"mu_star": Si["mu_star"], "mu_star_conf": Si["mu_star_conf"],
                     "sigma": Si["sigma"]}
         else:
-            Si = sobol_analyze.analyze(problem, Y[:, j], calc_second_order=False)
+            Si = sobol_analyze.analyze(problem, Y[:, j],
+                                       calc_second_order=SOBOL_SECOND_ORDER)
             cols = {"S1": Si["S1"], "S1_conf": Si["S1_conf"],
                     "ST": Si["ST"], "ST_conf": Si["ST_conf"]}
-        for i, param in enumerate(problem["names"]):
+            if SOBOL_SECOND_ORDER:
+                # S2/S2_conf are DxD with the pairwise indices in the upper triangle.
+                S2, S2c = Si["S2"], Si["S2_conf"]
+                for a in range(len(names)):
+                    for b in range(a + 1, len(names)):
+                        s2_rows.append({"metric": metric,
+                                        "param_1": names[a], "param_2": names[b],
+                                        "S2": S2[a, b], "S2_conf": S2c[a, b]})
+        for i, param in enumerate(names):
             rows.append({"metric": metric, "param": param,
                          **{k: v[i] for k, v in cols.items()}})
-    return rows
+    return rows, s2_rows
 
 
 def run_method(method, n, generations, max_steps, replicates, processes,
-               out_dir, base=None) -> pd.DataFrame:
-    """Sample, simulate, and estimate indices for one method. Returns long-form df."""
+               out_dir, base=None):
+    """Sample, simulate, and estimate indices for one method.
+
+    Returns ``(df, df_s2)``: the first/total-order (or Morris) indices and, for
+    Sobol with SOBOL_SECOND_ORDER on, the pairwise second-order table (else None).
+    """
     problem = PROBLEMS[method]  # Morris and Sobol vary different knob sets.
     # Pin the design to disk: Morris sampling isn't reproducible across runs, so a
     # resume must reuse the exact X that the checkpointed Y rows were computed for.
@@ -214,7 +240,8 @@ def run_method(method, n, generations, max_steps, replicates, processes,
     y_path = Path(out_dir) / f".gsa_{method}_Y.csv"
     Y = _simulate(X, problem["names"], generations, max_steps, replicates, processes,
                   base or {}, y_path=y_path)
-    return pd.DataFrame(_analyze_rows(method, problem, X, Y))
+    rows, s2_rows = _analyze(method, problem, X, Y)
+    return pd.DataFrame(rows), (pd.DataFrame(s2_rows) if s2_rows else None)
 
 
 def main() -> None:
@@ -305,10 +332,15 @@ def main() -> None:
                 f"missing or overlapping in {args.merge_dir}.")
         out_dir = Path(args.out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
+        rows, s2_rows = _analyze(args.method, problem, X, Y)
         out = out_dir / f"gsa_{args.method}.csv"
-        pd.DataFrame(_analyze_rows(args.method, problem, X, Y)).to_csv(out, index=False)
+        pd.DataFrame(rows).to_csv(out, index=False)
         print(f"[gsa] {args.method}: merged {len(chunk_files)} chunks "
               f"({Y.shape[0]} rows) -> {out}")
+        if s2_rows:
+            out2 = out_dir / f"gsa_{args.method}_S2.csv"
+            pd.DataFrame(s2_rows).to_csv(out2, index=False)
+            print(f"[gsa] {args.method}: second-order indices -> {out2}")
         return
 
     # ── full mode (default): sample + evaluate + analyze in one process ──────────
@@ -317,11 +349,15 @@ def main() -> None:
     methods = ["morris", "sobol"] if args.method == "both" else [args.method]
     for method in methods:
         print(f"[gsa] {method} (N={args.samples}) base={base or 'defaults'}")
-        df = run_method(method, args.samples, args.generations, args.max_steps,
-                        args.replicates, args.processes, out_dir, base)
+        df, df_s2 = run_method(method, args.samples, args.generations, args.max_steps,
+                               args.replicates, args.processes, out_dir, base)
         out = out_dir / f"gsa_{method}.csv"
         df.to_csv(out, index=False)
         print(f"[gsa] wrote {out}")
+        if df_s2 is not None:
+            out2 = out_dir / f"gsa_{method}_S2.csv"
+            df_s2.to_csv(out2, index=False)
+            print(f"[gsa] wrote {out2}  (second-order indices)")
         # Indices written: drop the checkpoint so a fresh re-run resamples.
         (out_dir / f".gsa_{method}_X.npy").unlink(missing_ok=True)
         (out_dir / f".gsa_{method}_Y.csv").unlink(missing_ok=True)
