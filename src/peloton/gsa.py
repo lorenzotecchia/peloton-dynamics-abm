@@ -24,9 +24,12 @@ Parameters under analysis (see PROBLEM_MORRIS / PROBLEM_SOBOL for live values):
         utility_decay, k_s, n_agents.
 Integer knobs (n_agents, n_teams, breakaway_cooldown_steps) are rounded from the
 float sample before reaching PelotonConfig.
-Targets (race-mean of the final generation): MeanStamina, NumGroups,
-Breakaways, MeanExposure. Fixed scenario knobs (road_length, dt, group_radius)
-are not SA-varied; set them with --road-length / --dt / --group-radius.
+Targets, read from the final generation's race: MeanStamina, NumGroups,
+Breakaways, MeanExposure (per-step race-means) plus the race-end aggregates
+TotalTime / MeanTime and TotalStaminaSpent / MeanStaminaSpent (time and W'
+consumed, summed over the field and per-rider). Fixed scenario knobs
+(road_length, dt, group_radius) are not SA-varied; set them with
+--road-length / --dt / --group-radius.
 """
 
 import argparse
@@ -100,8 +103,13 @@ PROBLEMS = {"morris": PROBLEM_MORRIS, "sobol": PROBLEM_SOBOL}
 # PelotonConfig (replace() would otherwise leave e.g. range(144.0) -> TypeError).
 INT_PARAMS = {"n_agents", "n_teams", "breakaway_cooldown_steps"}
 
-# Emergent metrics, race-averaged over the final generation's race.
-METRICS = ["MeanStamina", "NumGroups", "Breakaways", "MeanExposure"]
+# Emergent SA targets read from the final generation's race. The first four are
+# race-means (per-step, via the DataCollector); the Total*/Mean* time & stamina
+# metrics are race-end aggregates over the whole field (see _race_totals).
+METRICS = [
+    "MeanStamina", "NumGroups", "Breakaways", "MeanExposure",
+    "TotalTime", "MeanTime", "TotalStaminaSpent", "MeanStaminaSpent",
+]
 
 _MORRIS_LEVELS = 4
 
