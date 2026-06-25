@@ -86,13 +86,18 @@ MERGE_JOB_ID="$(sbatch --parsable \
   "$SCRIPT_DIR/_gsa-array-merge.sh")"
 MERGE_JOB_ID="${MERGE_JOB_ID%%;*}"
 
+MERGE_OUT_FILE="$PROJECT_ROOT/jobs/logs/peloton-gsa-${METHOD}-merge-${ARRAY_JOB_ID}.out"
+MERGE_ERR_FILE="$PROJECT_ROOT/jobs/logs/peloton-gsa-${METHOD}-merge-${ARRAY_JOB_ID}.err"
+
 echo ""
 echo "[summary] $METHOD GSA split into $K chunks of ~$CHUNK_SIZE rows ($N_ROWS total)"
 echo "  eval array : $ARRAY_JOB_ID  (tasks 0-$(( K - 1 )), 128 cores each)"
 echo "  merge job  : $MERGE_JOB_ID  (runs afterok the whole array)"
 echo "  result     : $OUT_DIR/gsa_${METHOD}.csv"
 echo "  work dir   : $WORK_DIR  (X.npy + Y chunks; safe to delete after merge)"
+echo "  task logs  : $PROJECT_ROOT/jobs/logs/peloton-gsa-${METHOD}-${ARRAY_JOB_ID}_*.out"
 echo ""
-echo "[tail] array task logs:  tail -F $PROJECT_ROOT/jobs/logs/peloton-gsa-${METHOD}-${ARRAY_JOB_ID}_*.out"
-echo "[tail] merge log:        tail -F $PROJECT_ROOT/jobs/logs/peloton-gsa-${METHOD}-merge-${ARRAY_JOB_ID}.out"
-echo "[watch] queue:           squeue --me"
+
+# Watch the pipeline (eval array -> merge) and exit when it ends.
+exec "$SCRIPT_DIR/_gsa-array-watch.sh" \
+  "$ARRAY_JOB_ID" "$MERGE_JOB_ID" "$METHOD" "$MERGE_OUT_FILE" "$MERGE_ERR_FILE" "$OUT_DIR"

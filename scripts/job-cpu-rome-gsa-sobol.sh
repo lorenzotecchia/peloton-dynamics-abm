@@ -59,5 +59,26 @@ while [[ ! -e "$OUT_FILE" ]]; do
   fi
   sleep 2
 done
-echo "Log is live. Tailing stdout (Ctrl-C stops the tail, NOT the job)..."
-exec tail -n +1 -F "$OUT_FILE"
+echo "Log is live. Streaming stdout until the job finishes"
+echo "(Ctrl-C stops watching; the job keeps running on the cluster)..."
+echo "----------------------------------------------------------------------"
+tail -n +1 -F "$OUT_FILE" &
+TAIL_PID=$!
+
+# Poll Slurm until the job leaves the active queue (no PENDING/RUNNING/COMPLETING).
+while squeue -h -j "$JOB_ID" -o '%T' 2>/dev/null | grep -q .; do
+  sleep 10
+done
+
+sleep 3                                  # let tail flush the final lines
+kill "$TAIL_PID" 2>/dev/null || true
+wait "$TAIL_PID" 2>/dev/null || true
+echo "----------------------------------------------------------------------"
+
+# Final disposition from the accounting DB (-X = the job allocation, not steps).
+STATE="$(sacct -j "$JOB_ID" -n -X -o State 2>/dev/null | head -n1 | tr -d ' ')"
+case "$STATE" in
+  COMPLETED)     echo "Job $JOB_ID COMPLETED. stdout: $OUT_FILE" ;;
+  ""|UNKNOWN)    echo "Job $JOB_ID ended; sacct gave no state. Check 'sacct -j $JOB_ID' and $ERR_FILE." ;;
+  *)             echo "Job $JOB_ID ended in state $STATE -- inspect $ERR_FILE and 'sacct -j $JOB_ID --format=State,ExitCode,Elapsed'." >&2; exit 1 ;;
+esac
