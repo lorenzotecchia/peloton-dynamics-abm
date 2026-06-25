@@ -13,12 +13,17 @@ Writes one CSV per method to <out-dir>/gsa_<method>.csv (long form:
 metric, param, index columns). Edit PROBLEM below to change which knobs are
 varied or their ranges.
 
-Parameters under analysis (default -> range; see PROBLEM_* for the live values):
-    recovery_rate         0.1  -> [0.05, 0.20]   W' recovery rate below CP
-    k_s                   0.8  -> [0.70, 1.00]   pack-speed coefficient (Martins 2013)
-    breakaway_speed_frac  0.95 -> [0.85, 1.00]   solo speed as fraction of threshold
-    utility_decay (lambda)0.4  -> [0.10, 1.00]   steepness of position->utility decay
-    n_agents (Sobol only) 96   -> [24, 192]      pack size, int (2-16 riders/team)
+Parameters under analysis (see PROBLEM_MORRIS / PROBLEM_SOBOL for live values):
+    Morris screens *every* live knob (18 of them) to find what matters: the
+        physiology block (w_max10_mean/std, cp_fraction, recovery_rate, k_aero,
+        c_roll, ref_speed_frac), grouping/breakaway (k_s, breakaway_speed_frac,
+        breakaway_cooldown_steps), evolution (utility_decay, evo_noise, sim_scale,
+        evo_bottom_frac, evo_top_frac, imitation_mu) and structure (n_agents,
+        n_teams). Dead/scenario/viz knobs are excluded (see PROBLEM_MORRIS).
+    Sobol decomposes a focused subset: recovery_rate, breakaway_speed_frac,
+        utility_decay, k_s, n_agents.
+Integer knobs (n_agents, n_teams, breakaway_cooldown_steps) are rounded from the
+float sample before reaching PelotonConfig.
 Targets (race-mean of the final generation): MeanStamina, NumGroups,
 Breakaways, MeanExposure. Fixed scenario knobs (road_length, dt, group_radius)
 are not SA-varied; set them with --road-length / --dt / --group-radius.
@@ -41,24 +46,50 @@ from peloton.config import PelotonConfig
 from peloton.evolution import run_generations
 
 # The knobs under analysis and their ranges (around PelotonConfig defaults).
-# Morris screens the 4 continuous physiology/strategy knobs; Sobol additionally
-# decomposes pack size (n_agents), an integer knob rounded from the float sample.
+#
+# Morris (cheap elementary-effects screening) varies *every* live model knob, so
+# we can see which of the full parameter set actually move the emergent metrics.
+# Omitted on purpose: learning_rate/elite_fraction (dead — unused by the model);
+# road_length/dt/group_radius (fixed scenario knobs, set per experiment via
+# --road-length/--dt/--group-radius, not screened); road_width/rider_length/
+# rider_width (viz-only geometry — riders are points, no dynamics) and seed (RNG).
+_MORRIS_KNOBS = [
+    # name                       lo      hi      # default
+    ("w_max10_mean",            350.0,  550.0),  # 450  mean 10-min max power (W)
+    ("w_max10_std",              34.0,  102.0),  # 68   power spread across the field
+    ("cp_fraction",               0.60,   0.80), # 0.7  critical-power fraction
+    ("recovery_rate",             0.05,   0.20), # 0.1  W' recovery below CP
+    ("k_aero",                    0.60,   1.20), # 0.9  aerodynamic coefficient
+    ("c_roll",                    2.0,    5.0),  # 3.6  rolling-resistance coefficient
+    ("ref_speed_frac",            0.80,   0.95), # 0.9  v_hat fraction for stamina init
+    ("k_s",                       0.70,   1.00), # 0.9  pack-speed coefficient
+    ("breakaway_speed_frac",      0.85,   1.00), # 0.9  solo speed / threshold
+    ("breakaway_cooldown_steps",  2,     20),    # 10   breaker re-merge cooldown (int)
+    ("utility_decay",             0.10,   1.00), # 0.8  lambda: position->utility decay
+    ("evo_noise",                 0.0,    0.10), # 0.02 per-generation Gaussian noise
+    ("sim_scale",                 0.50,   2.00), # 1.0  rider-similarity bandwidth
+    ("evo_bottom_frac",           0.10,   0.40), # 0.2  fraction of worst updated
+    ("evo_top_frac",              0.05,   0.30), # 0.1  fraction of top used as donors
+    ("imitation_mu",              0.30,   1.00), # 0.75 blend toward donor (1=copy)
+    ("n_agents",                 24,    192),    # 96   pack size (int, 2-16/team)
+    ("n_teams",                   4,     24),    # 12   number of teams (int)
+]
 PROBLEM_MORRIS = {
-    "num_vars": 4,
-    "names": ["recovery_rate", "breakaway_speed_frac", "utility_decay", "k_s"],
-    "bounds": [
-        [0.05, 0.20],    # recovery_rate        (default 0.1)
-        [0.85, 1.00],    # breakaway_speed_frac (default 0.95)
-        [0.10, 1.00],    # utility_decay/lambda (default 0.4)
-        [0.70, 1.00],    # k_s                  (default 0.8)
-    ],
+    "num_vars": len(_MORRIS_KNOBS),
+    "names": [name for name, _lo, _hi in _MORRIS_KNOBS],
+    "bounds": [[lo, hi] for _name, lo, hi in _MORRIS_KNOBS],
 }
 
+# Sobol (variance-based, expensive) decomposes a focused subset — keep D small.
+# n_agents is integer, rounded from the float sample.
 PROBLEM_SOBOL = {
-    "num_vars": PROBLEM_MORRIS["num_vars"] + 1,
-    "names": [*PROBLEM_MORRIS["names"], "n_agents"],
+    "num_vars": 5,
+    "names": ["recovery_rate", "breakaway_speed_frac", "utility_decay", "k_s", "n_agents"],
     "bounds": [
-        *PROBLEM_MORRIS["bounds"],
+        [0.05, 0.20],    # recovery_rate        (default 0.1)
+        [0.85, 1.00],    # breakaway_speed_frac (default 0.9)
+        [0.10, 1.00],    # utility_decay/lambda (default 0.8)
+        [0.70, 1.00],    # k_s                  (default 0.9)
         [24, 192],       # n_agents (default 96; 2-16 riders/team at n_teams=12)
     ],
 }
@@ -67,7 +98,7 @@ PROBLEMS = {"morris": PROBLEM_MORRIS, "sobol": PROBLEM_SOBOL}
 
 # Knobs that count/index things: round the float sample to int before it reaches
 # PelotonConfig (replace() would otherwise leave e.g. range(144.0) -> TypeError).
-INT_PARAMS = {"n_agents"}
+INT_PARAMS = {"n_agents", "n_teams", "breakaway_cooldown_steps"}
 
 # Emergent metrics, race-averaged over the final generation's race.
 METRICS = ["MeanStamina", "NumGroups", "Breakaways", "MeanExposure"]
