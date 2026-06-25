@@ -7,7 +7,7 @@ class PelotonConfig:
 
     road_length: float = 10000.0  # finish line position (x_max)
     road_width: float = 8.0  # lateral extent of the road (y_max)
-    n_agents: int = 100
+    n_agents: int = 96
     n_teams: int = 12
     rider_length: float = (
         1.8  # longitudinal footprint, for the viz ellipse + spawn grid
