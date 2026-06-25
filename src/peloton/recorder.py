@@ -42,13 +42,22 @@ def _rider_state(agent, active, solo_packs_cache, cfg) -> str:
     return "grouped" if agent._group_size > 1 else "isolated"
 
 
-def record_run(config: PelotonConfig, max_steps: int) -> dict:
+def record_run(
+    config: PelotonConfig, max_steps: int, model: PelotonModel | None = None
+) -> dict:
     """Run a single race, capturing the full per-step per-agent state.
 
     Returns a dict of plain Python rows / tables ready to be written out, so this
     function has no I/O or pandas dependency itself (easy to unit-test or reuse).
+    The (post-race) model is returned under ``"model"`` so a caller that wants to
+    keep going — e.g. ``evolve`` between generations — has the riders to act on.
+
+    Pass a pre-built ``model`` to record a run whose field carries state the bare
+    ``config`` can't express (a learned ``population`` from a prior generation);
+    when omitted a fresh ``PelotonModel(config=config)`` is used.
     """
-    model = PelotonModel(config=config)
+    if model is None:
+        model = PelotonModel(config=config)
     cfg = model.config
     k_aero = cfg.k_aero
     dt = cfg.dt
@@ -162,6 +171,7 @@ def record_run(config: PelotonConfig, max_steps: int) -> dict:
         "n_steps": step,
         "n_finished": model.n_finished,
         "n_agents": cfg.n_agents,
+        "model": model,  # post-race model, for callers that learn between races
     }
 
 
@@ -179,11 +189,15 @@ ANALYSIS_MENU = [
 ]
 
 
-def dump_run(config: PelotonConfig, max_steps: int, out_dir: str, parquet: bool) -> str:
-    """Run a race and write the full analysis bundle to ``out_dir``. Returns the dir."""
+def write_bundle(data: dict, out_dir: str, parquet: bool) -> list[str]:
+    """Write the analysis bundle from ``record_run`` data to ``out_dir`` (no stdout).
+
+    Pure I/O over an already-recorded ``data`` dict, so callers that record a race
+    themselves (e.g. dumping every generation of an evolution run) reuse the exact
+    file layout without re-running the race. Returns the table paths written.
+    """
     import pandas as pd
 
-    data = record_run(config, max_steps)
     os.makedirs(out_dir, exist_ok=True)
 
     tables = {
@@ -224,6 +238,14 @@ def dump_run(config: PelotonConfig, max_steps: int, out_dir: str, parquet: bool)
     }
     with open(os.path.join(out_dir, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
+
+    return written
+
+
+def dump_run(config: PelotonConfig, max_steps: int, out_dir: str, parquet: bool) -> str:
+    """Run a race and write the full analysis bundle to ``out_dir``. Returns the dir."""
+    data = record_run(config, max_steps)
+    written = write_bundle(data, out_dir, parquet)
 
     print(f"Dumped {data['n_steps']} steps x {data['n_agents']} riders "
           f"({len(data['agent_timeseries'])} rows) to {out_dir}/")
