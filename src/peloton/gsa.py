@@ -13,11 +13,12 @@ Writes one CSV per method to <out-dir>/gsa_<method>.csv (long form:
 metric, param, index columns). Edit PROBLEM below to change which knobs are
 varied or their ranges.
 
-Parameters under analysis (default -> range; see PROBLEM for the live values):
+Parameters under analysis (default -> range; see PROBLEM_* for the live values):
     recovery_rate         0.1  -> [0.05, 0.20]   W' recovery rate below CP
     k_s                   0.8  -> [0.70, 1.00]   pack-speed coefficient (Martins 2013)
     breakaway_speed_frac  0.95 -> [0.85, 1.00]   solo speed as fraction of threshold
     utility_decay (lambda)0.4  -> [0.10, 1.00]   steepness of position->utility decay
+    n_agents (Sobol only) 96   -> [24, 192]      pack size, int (2-16 riders/team)
 Targets (race-mean of the final generation): MeanStamina, NumGroups,
 Breakaways, MeanExposure. Fixed scenario knobs (road_length, dt, group_radius)
 are not SA-varied; set them with --road-length / --dt / --group-radius.
@@ -40,7 +41,9 @@ from peloton.config import PelotonConfig
 from peloton.evolution import run_generations
 
 # The knobs under analysis and their ranges (around PelotonConfig defaults).
-PROBLEM = {
+# Morris screens the 4 continuous physiology/strategy knobs; Sobol additionally
+# decomposes pack size (n_agents), an integer knob rounded from the float sample.
+PROBLEM_MORRIS = {
     "num_vars": 4,
     "names": ["recovery_rate", "breakaway_speed_frac", "utility_decay", "k_s"],
     "bounds": [
@@ -51,6 +54,21 @@ PROBLEM = {
     ],
 }
 
+PROBLEM_SOBOL = {
+    "num_vars": PROBLEM_MORRIS["num_vars"] + 1,
+    "names": [*PROBLEM_MORRIS["names"], "n_agents"],
+    "bounds": [
+        *PROBLEM_MORRIS["bounds"],
+        [24, 192],       # n_agents (default 96; 2-16 riders/team at n_teams=12)
+    ],
+}
+
+PROBLEMS = {"morris": PROBLEM_MORRIS, "sobol": PROBLEM_SOBOL}
+
+# Knobs that count/index things: round the float sample to int before it reaches
+# PelotonConfig (replace() would otherwise leave e.g. range(144.0) -> TypeError).
+INT_PARAMS = {"n_agents"}
+
 # Emergent metrics, race-averaged over the final generation's race.
 METRICS = ["MeanStamina", "NumGroups", "Breakaways", "MeanExposure"]
 
@@ -59,8 +77,9 @@ _MORRIS_LEVELS = 4
 
 def _evaluate(args: tuple) -> np.ndarray:
     """Run one sample's evolution for `replicates` seeds; return seed-mean final metrics."""
-    row, generations, max_steps, replicates, base = args
-    overrides = dict(zip(PROBLEM["names"], (float(v) for v in row)))
+    row, names, generations, max_steps, replicates, base = args
+    overrides = {n: (int(round(v)) if n in INT_PARAMS else float(v))
+                 for n, v in zip(names, row)}
     out = np.empty((replicates, len(METRICS)))
     for s in range(replicates):
         # `base` holds the fixed scenario (road_length, dt, group_radius, ...);
@@ -71,7 +90,7 @@ def _evaluate(args: tuple) -> np.ndarray:
     return out.mean(axis=0)
 
 
-def _simulate(X, generations, max_steps, replicates, processes, y_path, base) -> np.ndarray:
+def _simulate(X, names, generations, max_steps, replicates, processes, y_path, base) -> np.ndarray:
     """Evaluate every sample row in parallel -> Y of shape (n_samples, n_metrics).
 
     Checkpoints each completed sample to ``y_path`` as it finishes, so a killed
@@ -85,7 +104,7 @@ def _simulate(X, generations, max_steps, replicates, processes, y_path, base) ->
     if start:
         print(f"  resuming from checkpoint: {start}/{len(X)} samples done", flush=True)
 
-    tasks = [(row, generations, max_steps, replicates, base) for row in X[start:]]
+    tasks = [(row, names, generations, max_steps, replicates, base) for row in X[start:]]
     print(f"  evaluating {len(tasks)} samples x {replicates} reps x {generations} gens ...",
           flush=True)
     with Pool(processes) as pool, open(y_path, "a") as fh:
@@ -99,6 +118,7 @@ def _simulate(X, generations, max_steps, replicates, processes, y_path, base) ->
 def run_method(method, n, generations, max_steps, replicates, processes,
                out_dir, base=None) -> pd.DataFrame:
     """Sample, simulate, and estimate indices for one method. Returns long-form df."""
+    problem = PROBLEMS[method]  # Morris and Sobol vary different knob sets.
     # Pin the design to disk: Morris sampling isn't reproducible across runs, so a
     # resume must reuse the exact X that the checkpointed Y rows were computed for.
     x_path = Path(out_dir) / f".gsa_{method}_X.npy"
@@ -106,27 +126,28 @@ def run_method(method, n, generations, max_steps, replicates, processes,
         X = np.load(x_path)
     else:
         if method == "morris":
-            X = morris_sample(PROBLEM, n, num_levels=_MORRIS_LEVELS)
+            X = morris_sample(problem, n, num_levels=_MORRIS_LEVELS)
         elif method == "sobol":
-            X = sobol_sample.sample(PROBLEM, n, calc_second_order=False)
+            X = sobol_sample.sample(problem, n, calc_second_order=False)
         else:
             raise ValueError(f"unknown method {method!r}")
         np.save(x_path, X)
 
     y_path = Path(out_dir) / f".gsa_{method}_Y.csv"
-    Y = _simulate(X, generations, max_steps, replicates, processes, y_path, base or {})
+    Y = _simulate(X, problem["names"], generations, max_steps, replicates, processes,
+                  y_path, base or {})
 
     rows = []
     for j, metric in enumerate(METRICS):
         if method == "morris":
-            Si = morris_analyze(PROBLEM, X, Y[:, j], num_levels=_MORRIS_LEVELS)
+            Si = morris_analyze(problem, X, Y[:, j], num_levels=_MORRIS_LEVELS)
             cols = {"mu_star": Si["mu_star"], "mu_star_conf": Si["mu_star_conf"],
                     "sigma": Si["sigma"]}
         else:
-            Si = sobol_analyze.analyze(PROBLEM, Y[:, j], calc_second_order=False)
+            Si = sobol_analyze.analyze(problem, Y[:, j], calc_second_order=False)
             cols = {"S1": Si["S1"], "S1_conf": Si["S1_conf"],
                     "ST": Si["ST"], "ST_conf": Si["ST_conf"]}
-        for i, param in enumerate(PROBLEM["names"]):
+        for i, param in enumerate(problem["names"]):
             rows.append({"metric": metric, "param": param,
                          **{k: v[i] for k, v in cols.items()}})
     return pd.DataFrame(rows)
