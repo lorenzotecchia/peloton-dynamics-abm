@@ -13,6 +13,7 @@ change needed for a sensitivity analysis.
 
 import argparse
 import os
+from pathlib import Path
 
 import pandas as pd
 from mesa import batch_run
@@ -43,10 +44,11 @@ def main() -> None:
     p.add_argument("--max-steps", type=int, default=1000)
     p.add_argument("--processes", type=int, default=os.cpu_count(),
                    help="worker processes (set to $SLURM_CPUS_PER_TASK on Slurm)")
-    p.add_argument("--out", default="results.csv")
+    p.add_argument("--out", default="data/results.csv")
     args = p.parse_args()
 
     df = run(args.runs, args.max_steps, args.processes)
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(args.out, index=False)
     print(f"wrote {len(df)} runs to {args.out}")
 

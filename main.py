@@ -1,6 +1,7 @@
 """Peloton ABM entry point.
 
     uv run python main.py run        # one race, headless, prints finish order
+    uv run python main.py dump       # one race, dump full per-step per-agent data for analysis
     uv run python main.py learn      # many races in sequence, learning between them
     uv run python main.py solara     # interactive Solara visualization
     uv run python main.py test       # run the test suite
@@ -30,16 +31,27 @@ def run_headless(max_steps: int) -> None:
         print(f"  {rank:>2}. rider {unique_id} (step {step})")
 
 
-def run_learning(generations: int, max_steps: int, seed: int | None, out: str) -> None:
+def run_learning(
+    generations: int, max_steps: int, seed: int | None, out: str, population_out: str
+) -> None:
     """Run the across-race learning loop and dump the per-generation trajectory."""
     import pandas as pd
 
-    history = run_generations(generations, max_steps, PelotonConfig(seed=seed))
+    from pathlib import Path
+
+    history = run_generations(
+        generations, max_steps, PelotonConfig(seed=seed), population_out=population_out
+    )
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(history).to_csv(out, index=False)
     print(f"Ran {generations} generations; wrote coefficient trajectory to {out}.")
+    print(f"  Saved learned population to {population_out}")
+    print(f"  Replay it:  uv run python main.py solara --population {population_out}")
     first, last = history[0], history[-1]
-    print(f"  coop.delta mean: {first['coop.delta_mean']:.3f} -> {last['coop.delta_mean']:.3f}"
-          f"  (std {first['coop.delta_std']:.3f} -> {last['coop.delta_std']:.3f})")
+    print(
+        f"  coop.delta mean: {first['coop.delta_mean']:.3f} -> {last['coop.delta_mean']:.3f}"
+        f"  (std {first['coop.delta_std']:.3f} -> {last['coop.delta_std']:.3f})"
+    )
 
 
 def main() -> None:
@@ -49,13 +61,43 @@ def main() -> None:
     run_p = sub.add_parser("run", help="run one race headless and print finish order")
     run_p.add_argument("--max-steps", type=int, default=200)
 
-    learn_p = sub.add_parser("learn", help="run many races in sequence, learning between them")
-    learn_p.add_argument("--generations", type=int, default=100)
-    learn_p.add_argument("--max-steps", type=int, default=400)
-    learn_p.add_argument("--seed", type=int, default=None)
-    learn_p.add_argument("--out", default="learning.csv")
+    dump_p = sub.add_parser(
+        "dump", help="run one race and dump full per-agent data for analysis"
+    )
+    dump_p.add_argument("--max-steps", type=int, default=2000)
+    dump_p.add_argument("--seed", type=int, default=None)
+    dump_p.add_argument(
+        "--out-dir",
+        default=None,
+        help="output directory (default: analysis_output/<timestamp>)",
+    )
+    dump_p.add_argument(
+        "--parquet",
+        action="store_true",
+        help="write Parquet instead of CSV (needs pyarrow)",
+    )
 
-    sub.add_parser("solara", help="launch the interactive Solara visualization")
+    learn_p = sub.add_parser(
+        "learn", help="run many races in sequence, learning between them"
+    )
+    learn_p.add_argument("--generations", type=int, default=100)
+    learn_p.add_argument("--max-steps", type=int, default=2000)
+    learn_p.add_argument("--seed", type=int, default=None)
+    learn_p.add_argument("--out", default="data/learning.csv")
+    learn_p.add_argument(
+        "--population-out",
+        default="data/population.json",
+        help="where to save the learned population for Solara replay",
+    )
+
+    solara_p = sub.add_parser(
+        "solara", help="launch the interactive Solara visualization"
+    )
+    solara_p.add_argument(
+        "--population",
+        default=None,
+        help="replay a saved learned population JSON (from `learn`)",
+    )
     sub.add_parser("test", help="run the test suite (pytest)")
 
     args = parser.parse_args()
@@ -63,11 +105,32 @@ def main() -> None:
     match args.command:
         case "run":
             run_headless(args.max_steps)
+        case "dump":
+            from datetime import datetime
+            from peloton.recorder import dump_run
+
+            out_dir = args.out_dir or f"analysis_output/{datetime.now():%Y%m%d-%H%M%S}"
+            dump_run(
+                PelotonConfig(seed=args.seed), args.max_steps, out_dir, args.parquet
+            )
         case "learn":
-            run_learning(args.generations, args.max_steps, args.seed, args.out)
+            run_learning(
+                args.generations,
+                args.max_steps,
+                args.seed,
+                args.out,
+                args.population_out,
+            )
         case "solara":
             # solara is a server: this blocks until the user stops it (Ctrl-C).
-            subprocess.run(["solara", "run", "run_app.py"], check=True)
+            # The model self-loads PELOTON_POPULATION on every (re)instantiation,
+            # so the learned field survives SolaraViz's slider-reset.
+            import os
+
+            env = os.environ.copy()
+            if args.population:
+                env["PELOTON_POPULATION"] = args.population
+            subprocess.run(["solara", "run", "run_app.py"], env=env, check=True)
         case "test":
             sys.exit(subprocess.run(["pytest"]).returncode)
         case _:

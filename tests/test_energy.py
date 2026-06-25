@@ -1,4 +1,5 @@
 import types
+from dataclasses import replace
 
 import pytest
 
@@ -41,10 +42,12 @@ def test_init_physiology_sets_positive_consistent_values():
 
 
 def test_update_stamina_drains_above_cp_and_recovers_below():
+    # r=1 isolates the recovery formula from the (SA-tuned) default recovery_rate.
+    cfg = replace(CFG, recovery_rate=1.0)
     agent = types.SimpleNamespace(cp=280.0, w_full=1000.0, w_prime=500.0)
-    energy.update_stamina(agent, p_required=380.0, cfg=CFG)   # 100 W over CP, dt=1
+    energy.update_stamina(agent, p_required=380.0, cfg=cfg)   # 100 W over CP, dt=1
     assert agent.w_prime == pytest.approx(400.0)
-    energy.update_stamina(agent, p_required=230.0, cfg=CFG)   # 50 W under CP, r=1
+    energy.update_stamina(agent, p_required=230.0, cfg=cfg)   # 50 W under CP, r=1
     assert agent.w_prime == pytest.approx(450.0)
 
 

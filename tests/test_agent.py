@@ -22,9 +22,11 @@ def test_agent_has_team_and_default_strategy_state():
     assert agent.team_id == 2
     assert agent.solo is False
     assert agent.utility == 0.0
-    # Fresh agent carries an independent copy of the default coefficients.
+    # Fresh agent carries an independent copy of the default coefficients
+    # (sampled from default_coeffs: Gaussian around the configured means).
     assert set(agent.coeffs) == {"coop", "leave", "follow"}
-    assert agent.coeffs["coop"]["delta"] == 1.0
+    assert set(agent.coeffs["coop"]) == {"alpha", "beta", "gamma", "delta"}
+    assert all(isinstance(v, float) for v in agent.coeffs["coop"].values())
 
 
 def test_agent_physiology_is_initialised_and_consistent():

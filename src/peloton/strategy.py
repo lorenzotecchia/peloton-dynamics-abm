@@ -12,9 +12,9 @@ import random
 # Mean and standard deviation for the initial coefficients. alpha = bias,
 # beta = distance, gamma = teammates, delta = energy fraction.
 DEFAULT_COEFF_MEANS = {
-    "coop":   {"alpha": 2.0, "beta": 20.0, "gamma": 0.0, "delta": 5.0},
-    "leave":  {"alpha": -2.0, "beta": -2.0, "gamma": 0.0, "delta": -1.0},
-    "follow": {"alpha": -2.0, "beta": -2.0, "gamma": 0.0, "delta": -2.0},
+    "coop": {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
+    "leave": {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
+    "follow": {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
 }
 # DEFAULT_COEFF_MEANS = {
 #     "coop":   {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
@@ -22,9 +22,9 @@ DEFAULT_COEFF_MEANS = {
 #     "follow": {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "delta": 0.0},
 # }
 DEFAULT_COEFF_STDS = {
-    "coop":   {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
-    "leave":  {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
-    "follow": {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0},
+    "coop": {"alpha": 5.0, "beta": 5.0, "gamma": 5.0, "delta": 5.0},
+    "leave": {"alpha": 5.0, "beta": 5.0, "gamma": 5.0, "delta": 5.0},
+    "follow": {"alpha": 5.0, "beta": 5.0, "gamma": 5.0, "delta": 5.0},
 }
 
 
@@ -33,7 +33,9 @@ def default_coeffs(rng: random.Random | None = None) -> dict:
     rng = rng or random.Random()
     return {
         group: {
-            name: rng.gauss(DEFAULT_COEFF_MEANS[group][name], DEFAULT_COEFF_STDS[group][name])
+            name: rng.gauss(
+                DEFAULT_COEFF_MEANS[group][name], DEFAULT_COEFF_STDS[group][name]
+            )
             for name in params
         }
         for group, params in DEFAULT_COEFF_MEANS.items()
@@ -63,7 +65,12 @@ def _teammates_in(agent, group) -> int:
 
 
 def contribution(agent, group, cfg) -> float:
-    """C_i = sigma(alpha + beta*d/L + gamma*T + delta*W'/W_full), in (0, 1)."""
+    """C_i = sigma(alpha + beta*d/L + gamma*T + delta*(1 - W'/W_full)), in (0, 1).
+
+    Note the (1 - W'/W_full): with delta>0 a *more spent* rider cooperates more
+    (takes pulls late when its own chances are gone), unlike breakaway_prob which
+    uses W'/W_full directly (a fresh rider is likelier to attack).
+    """
     c = agent.coeffs["coop"]
     z = (
         c["alpha"]
