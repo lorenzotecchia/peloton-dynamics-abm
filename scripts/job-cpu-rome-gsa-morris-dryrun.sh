@@ -8,16 +8,17 @@
 # Usage (from the project root, on a login node):
 #   bash scripts/job-cpu-rome-gsa-morris-dryrun.sh [SAMPLES] [REPLICATES] [GENERATIONS] \
 #                                                  [MAX_STEPS] [ROAD_LENGTH] [DT] [GROUP_RADIUS]
-# Defaults: SAMPLES=2, REPLICATES=2, GENERATIONS=3, MAX_STEPS=2500,
+# Defaults: SAMPLES=128, REPLICATES=5, GENERATIONS=3, MAX_STEPS=2500,
 #           ROAD_LENGTH=10000 (10 km), DT=2 (2 s), GROUP_RADIUS=3.
-# Morris does ~SAMPLES*(D+1) runs (D=18); at SAMPLES=2 that's ~38 samples.
+# Morris does ~SAMPLES*(D+1) runs (D=18); at SAMPLES=128 that's ~2432 samples.
+# GENERATIONS stays small (3) so this is a scaled shake-out, not the full run.
 # Output: <GSA_OUT_BASE>/<SLURM JOB ID>-<GIT HASH>-morris/, with GSA_OUT_BASE
 # defaulting to /gpfs/work5/0/prjs2142/gsa-agent-dump-per-run/dryrun. Logs in jobs/logs/.
 
 set -euo pipefail
 
-SAMPLES="${1:-2}"
-REPLICATES="${2:-2}"
+SAMPLES="${1:-128}"
+REPLICATES="${2:-5}"
 GENERATIONS="${3:-3}"
 MAX_STEPS="${4:-2500}"
 ROAD_LENGTH="${5:-10000}"
@@ -36,7 +37,7 @@ JOB_ID="$(sbatch --parsable --job-name=peloton-gsa-morris-dryrun \
   --nodes=1 --ntasks=1 \
   --gpus=0 \
   --cpus-per-task=128 \
-  --time=00:30:00 \
+  --time=06:00:00 \
   --chdir="$PROJECT_ROOT" \
   --output=jobs/logs/peloton-gsa-morris-dryrun-%j.out \
   --error=jobs/logs/peloton-gsa-morris-dryrun-%j.err \
