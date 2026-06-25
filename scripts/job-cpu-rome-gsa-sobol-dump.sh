@@ -7,18 +7,20 @@
 # Usage (from the project root, on a login node):
 #   bash scripts/job-cpu-rome-gsa-sobol-dump.sh [SAMPLES] [GENERATIONS] \
 #                                [MAX_STEPS] [ROAD_LENGTH] [DT] [GROUP_RADIUS]
-# Defaults: SAMPLES=8, GENERATIONS=10, MAX_STEPS=2000, ROAD_LENGTH=10000 (10 km),
+# Defaults: SAMPLES=256, GENERATIONS=10, MAX_STEPS=2000, ROAD_LENGTH=10000 (10 km),
 #           DT=2 (2 s), GROUP_RADIUS=3. No replication (every race uses seed 0).
 # Sobol draws ~SAMPLES*(D+2) design rows (D=5; use a power of 2 for SAMPLES), each
-# run over GENERATIONS races and dumped in full — keep SAMPLES/GENERATIONS small
-# so it fits the hour and the disk. Output goes to
+# run over GENERATIONS races and dumped in full: SAMPLES=256 -> ~1792 rows x 10
+# gens ~= 18k races, ~30 min on 128 cores (well under the 1-hour wall). Completed
+# sample dirs persist as they finish, so a wall-clock kill only loses the samples
+# still in flight. Output goes to
 # <GSA_OUT_BASE>/<SLURM JOB ID>-<GIT HASH>-sobol-dump/ (GSA_OUT_BASE defaults to
 # /gpfs/work5/0/prjs2142/gsa-agent-dump-per-run). Set PARQUET=1 to write Parquet
 # instead of CSV. Logs in jobs/logs/.
 
 set -euo pipefail
 
-SAMPLES="${1:-8}"
+SAMPLES="${1:-256}"
 GENERATIONS="${2:-10}"
 MAX_STEPS="${3:-2000}"
 ROAD_LENGTH="${4:-10000}"
