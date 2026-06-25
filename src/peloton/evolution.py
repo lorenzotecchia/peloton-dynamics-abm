@@ -18,47 +18,71 @@ race like them (similar engine), which is how distinct roles can emerge.
 """
 
 import copy
+import json
 import math
 import statistics
+from pathlib import Path
+
 import numpy as np
 
 from peloton.model import PelotonModel
 
-# def _assign_utilities(agents, model, cfg) -> None:
-#     """Utility = finishing position (winner highest); DNF scores 0 (worst)."""
-#     rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
-#     decay = model.config.utility_decay  # lambda; larger -> steeper decay
-#
-#     if not model.finish_order:
-#         return None  # nessun vincitore
-#
-#     for a in agents:
-#         pos = rank[a.unique_id]
-#         a.utility = math.exp(-decay * pos)
+
+def save_population(riders, path) -> None:
+    """Dump the learned coeffs + physiology so a later run can replay the field.
+
+    Matches PelotonModel's ``population`` / ``physiology`` kwargs (both indexed
+    by spawn slot), so loading is just feeding these straight back in.
+    """
+    data = {
+        "physiology": [float(r.w_max10) for r in riders],
+        "population": [r.coeffs for r in riders],
+    }
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, indent=2))
 
 
 def _assign_utilities(agents, model, cfg) -> None:
-    """Utility decays exponentially by finishing position; DNF = 0."""
+    """Utility = finishing position (winner highest); DNF scores 0 (worst)."""
+
     rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
     decay = model.config.utility_decay  # lambda; larger -> steeper decay
 
     if not model.finish_order:
         return None  # nessun vincitore
-    individual_utility = {}
 
     for a in agents:
         if a.unique_id in rank:
             pos = rank[a.unique_id]
-            individual_utility[a.unique_id] = math.exp(-decay * pos)
+            a.utility = math.exp(-decay * pos)
         else:
-            individual_utility[a.unique_id] = 0.0
-    team_utility = np.zeros(cfg.n_teams)
+            a.utility = 0.0
 
-    for a in agents:
-        team_utility[a.team_id] += individual_utility[a.unique_id]
-    # 3. Assegna a ogni agente la utility del proprio team
-    for a in agents:
-        a.utility = team_utility[a.team_id]
+
+# def _assign_utilities(agents, model, cfg) -> None:
+#    """Utility decays exponentially by finishing position; DNF = 0."""
+#    rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
+#    decay = model.config.utility_decay  # lambda; larger -> steeper decay
+#
+#    if not model.finish_order:
+#        return None  # nessun vincitore
+#    individual_utility = {}
+#
+#    for a in agents:
+#        if a.unique_id in rank:
+#            pos = rank[a.unique_id]
+#            individual_utility[a.unique_id] = math.exp(-decay * pos)
+#        else:
+#            individual_utility[a.unique_id] = 0.0
+#    team_utility = np.zeros(cfg.n_teams)
+#
+#    for a in agents:
+#        team_utility[a.team_id] += individual_utility[a.unique_id]
+#    # 3. Assegna a ogni agente la utility del proprio team
+#    for a in agents:
+#        a.utility = team_utility[a.team_id]
+#
 
 
 def _similarity(a, b, cfg) -> float:
@@ -160,7 +184,9 @@ def _utility_stats(riders) -> dict:
     }
 
 
-def run_generations(n_generations: int, max_steps: int, config=None) -> list[dict]:
+def run_generations(
+    n_generations: int, max_steps: int, config=None, population_out: str | None = None
+) -> list[dict]:
     """Run ``n_generations`` races in sequence, learning between them.
 
     Coefficients persist across races in ``population`` (one dict per spawn
@@ -171,6 +197,7 @@ def run_generations(n_generations: int, max_steps: int, config=None) -> list[dic
     """
     population: list[dict] | None = None
     history: list[dict] = []
+    final_riders: list = []
 
     for gen in range(n_generations):
         model = PelotonModel(config=config, population=population)
@@ -192,5 +219,11 @@ def run_generations(n_generations: int, max_steps: int, config=None) -> list[dic
 
         # Deep copy so the next generation's agents never alias each other's dicts.
         population = [copy.deepcopy(rider.coeffs) for rider in model.riders]
+        final_riders = model.riders
+
+    # final_riders holds the fully-evolved coeffs paired with the last
+    # generation's physiology — exactly the "learned" field to replay in Solara.
+    if population_out and final_riders:
+        save_population(final_riders, population_out)
 
     return history

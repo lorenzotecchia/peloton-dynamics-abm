@@ -1,6 +1,9 @@
 """The peloton model: space, agent spawning, stepping, and data collection."""
 
-from dataclasses import asdict
+import json
+import os
+from dataclasses import asdict, replace
+from pathlib import Path
 
 from mesa import Model
 from mesa.datacollection import DataCollector
@@ -74,6 +77,17 @@ class PelotonModel(Model):
         if rng is not None:
             overrides.setdefault("seed", rng)
         config = self._resolve_config(config, overrides)
+
+        # Replay a learned population in Solara: the model self-loads it so it
+        # survives SolaraViz's reset, which re-instantiates from sliders only and
+        # can't thread `population=` through. ponytail: env-gated so headless and
+        # test runs are untouched; the file's rider count wins over n_agents.
+        if population is None and os.environ.get("PELOTON_POPULATION"):
+            data = json.loads(Path(os.environ["PELOTON_POPULATION"]).read_text())
+            population, physiology = data["population"], data["physiology"]
+        if population is not None and len(population) != config.n_agents:
+            config = replace(config, n_agents=len(population))
+
         # mesa wants `rng`, not `seed` (deprecated). An int rng seeds self.random
         # identically to the old seed= path; None draws from OS entropy.
         super().__init__(rng=config.seed)

@@ -7,8 +7,8 @@ class PelotonConfig:
 
     road_length: float = 10000.0  # finish line position (x_max)
     road_width: float = 8.0  # lateral extent of the road (y_max)
-    n_agents: int = 120
-    n_teams: int = 15
+    n_agents: int = 100
+    n_teams: int = 12
     rider_length: float = (
         1.8  # longitudinal footprint, for the viz ellipse + spawn grid
     )
@@ -22,14 +22,14 @@ class PelotonConfig:
         0.7  # critical power as fraction of W_max10 (lactate threshold)
     )
     recovery_rate: float = 0.1  # r: stamina recovery multiplier below CP
-    k_aero: float = 0.18  # aerodynamic coefficient in P = k*cf*v^3 + c_roll*v
+    k_aero: float = 0.18 * 5  # aerodynamic coefficient in P = k*cf*v^3 + c_roll*v
     c_roll: float = 3.6  # rolling-resistance coefficient
     ref_speed_frac: float = 0.9  # v_hat = ref_speed_frac * s_m, for stamina init
     dt: float = 2.0  # seconds of race per model step
 
     # --- Grouping / pack speed / drafting / breakaway. ---
     group_radius: float = 3.0  # "<3 m apart => same group"
-    k_s: float = 0.8  # pack speed coefficient, in [0.7, 1] (Martins 2013)
+    k_s: float = 0.9  # pack speed coefficient, in [0.7, 1] (Martins 2013)
     breakaway_speed_frac: float = (
         0.9  # solo speed of a breakaway = frac * s_m (Hoenigman)
     )

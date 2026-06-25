@@ -68,3 +68,21 @@ def test_run_generations_records_coefficient_trajectories():
     # already nonzero before any learning, and the mean sits near the default.
     assert history[0]["coop.delta_std"] > 0.0
     assert abs(history[0]["coop.delta_mean"] - 5.0) < 3.0  # ~DEFAULT mean, small-n scatter
+
+
+def test_save_population_roundtrips_and_replays(tmp_path, monkeypatch):
+    """learn -> save JSON -> model self-loads it (env-gated), field count matches."""
+    from peloton.model import PelotonModel
+
+    cfg = PelotonConfig(n_agents=6, n_teams=2, road_length=60.0, seed=0)
+    out = tmp_path / "population.json"
+    evolution.run_generations(
+        n_generations=2, max_steps=80, config=cfg, population_out=str(out)
+    )
+    assert out.exists()
+
+    # A fresh model with PELOTON_POPULATION set replays the saved field: rider
+    # count follows the file (here 6), overriding the default n_agents.
+    monkeypatch.setenv("PELOTON_POPULATION", str(out))
+    model = PelotonModel(road_length=60.0)
+    assert len(model.riders) == 6
