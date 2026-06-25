@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Dump full per-agent state across a small Morris sample on one Snellius Rome CPU
+# node (1-hour walltime). Like job-cpu-rome-gsa-morris.sh but it computes NO
+# indices: it writes the complete main.py-dump bundle for every generation of
+# every sample, so the SA can be recomputed from the raw data later.
+#
+# Usage (from the project root, on a login node):
+#   bash scripts/job-cpu-rome-gsa-morris-dump.sh [SAMPLES] [GENERATIONS] \
+#                                [MAX_STEPS] [ROAD_LENGTH] [DT] [GROUP_RADIUS]
+# Defaults: SAMPLES=20, GENERATIONS=150, MAX_STEPS=2000, ROAD_LENGTH=10000 (10 km),
+#           DT=2 (2 s), GROUP_RADIUS=3. No replication (every race uses seed 0).
+# Morris draws ~SAMPLES*(D+1) design rows (D=18), each run over GENERATIONS races
+# and dumped in full: SAMPLES=20 -> ~380 rows x 150 gens ~= 57k races, ~45 min on
+# 128 cores (runtime tracks rows*gens; calibrated from ~12 min at 6080 rows x 10
+# gens). Fewer parameter points but a full 150-generation learning trajectory
+# dumped per point. Completed sample dirs persist as they finish, so a wall-clock
+# kill only loses the samples still in flight. Output goes to
+# <GSA_OUT_BASE>/<SLURM JOB ID>-<GIT HASH>-morris-dump/
+# (GSA_OUT_BASE defaults to /gpfs/work5/0/prjs2142/gsa-agent-dump-per-run).
+# Writes Parquet by default (smaller); set PARQUET=0 for CSV. Logs in jobs/logs/.
+
+set -euo pipefail
+
+SAMPLES="${1:-20}"
+GENERATIONS="${2:-150}"
+MAX_STEPS="${3:-2000}"
+ROAD_LENGTH="${4:-10000}"
+DT="${5:-2}"
+GROUP_RADIUS="${6:-3}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+mkdir -p "$PROJECT_ROOT/jobs/logs"
+
+JOB_ID="$(sbatch --parsable --job-name=peloton-gsa-morris-dump \
+  --partition=rome \
+  --nodes=1 --ntasks=1 \
+  --gpus=0 \
+  --cpus-per-task=128 \
+  --time=01:00:00 \
+  --chdir="$PROJECT_ROOT" \
+  --output=jobs/logs/peloton-gsa-morris-dump-%j.out \
+  --error=jobs/logs/peloton-gsa-morris-dump-%j.err \
+  --export=ALL,METHOD=morris,SAMPLES="$SAMPLES",GENERATIONS="$GENERATIONS",MAX_STEPS="$MAX_STEPS",ROAD_LENGTH="$ROAD_LENGTH",DT="$DT",GROUP_RADIUS="$GROUP_RADIUS",PARQUET="${PARQUET:-1}" \
+  "$SCRIPT_DIR/_gsa-dump-job-body.sh")"
+JOB_ID="${JOB_ID%%;*}"  # --parsable may append ";cluster"; keep just the id
+
+OUT_FILE="$PROJECT_ROOT/jobs/logs/peloton-gsa-morris-dump-${JOB_ID}.out"
+ERR_FILE="$PROJECT_ROOT/jobs/logs/peloton-gsa-morris-dump-${JOB_ID}.err"
+echo "Submitted Morris agent-dump as job $JOB_ID"
+echo "  stdout: $OUT_FILE"
+echo "  stderr: $ERR_FILE"
+echo "Waiting for job $JOB_ID to start and create its log (appears once it leaves"
+echo "the queue and begins running)..."
+while [[ ! -e "$OUT_FILE" ]]; do
+  # Bail out if the job left the queue without ever producing a log (failed to start).
+  if [[ -z "$(squeue -h -j "$JOB_ID" -o '%T' 2>/dev/null)" ]]; then
+    echo "Job $JOB_ID is no longer queued but $OUT_FILE never appeared." >&2
+    echo "Check 'sacct -j $JOB_ID' and $ERR_FILE." >&2
+    exit 1
+  fi
+  sleep 2
+done
+echo "Log is live. Tailing stdout (Ctrl-C stops the tail, NOT the job)..."
+exec tail -n +1 -F "$OUT_FILE"
