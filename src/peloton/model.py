@@ -53,8 +53,16 @@ def _exposure(cf_eff: float, min_cf_eff: float) -> float:
 class PelotonModel(Model):
     """A road full of cyclists that drift into drafting formations."""
 
-    def __init__(self, config: PelotonConfig | None = None, *, scenario=None, rng=None,
-                 population=None, **overrides):
+    def __init__(
+        self,
+        config: PelotonConfig | None = None,
+        *,
+        scenario=None,
+        rng=None,
+        population=None,
+        physiology=None,
+        **overrides,
+    ):
         # SolaraViz's reset injects a `scenario=` kwarg (Mesa's experimental
         # scenarios feature). We don't use scenarios, so consume and ignore it
         # here rather than let it reach _resolve_config, which strictly rejects
@@ -94,8 +102,11 @@ class PelotonModel(Model):
         jitter = gap / 2 - 0.01
         for i in range(config.n_agents):
             # Seed this rider's learned coefficients from the population, if any.
+            w_max10_i = physiology[i] if physiology is not None else None
             coeffs = population[i] if population is not None else None
-            agent = CyclistAgent(self, team_id=i % config.n_teams, coeffs=coeffs)
+            agent = CyclistAgent(
+                self, team_id=i % config.n_teams, coeffs=coeffs, w_max10=w_max10_i
+            )
             self.riders.append(agent)
             row, col = divmod(i, per_row)
             x = row * slot_l + self.random.uniform(0.0, jitter)
@@ -104,10 +115,10 @@ class PelotonModel(Model):
 
         self.datacollector = DataCollector(
             model_reporters={
-                "MeanStamina": _mean_stamina,     # energy depletion over the race
-                "NumGroups": _num_groups,         # peloton fragmentation
-                "Breakaways": _num_breakaways,    # riders off the front
-                "MeanExposure": _mean_exposure,   # average drag factor (drafting depth)
+                "MeanStamina": _mean_stamina,  # energy depletion over the race
+                "NumGroups": _num_groups,  # peloton fragmentation
+                "Breakaways": _num_breakaways,  # riders off the front
+                "MeanExposure": _mean_exposure,  # average drag factor (drafting depth)
             }
         )
         self.datacollector.collect(self)
@@ -168,7 +179,9 @@ class PelotonModel(Model):
         # Process recent breakers (from previous steps) that haven't been moved yet.
         # This is typically empty since agents break and are moved in the same step,
         # but handles edge cases if grouping logic changes.
-        remaining = [a for a in active if a not in moved and getattr(a, "break_cooldown", 0) > 0]
+        remaining = [
+            a for a in active if a not in moved and getattr(a, "break_cooldown", 0) > 0
+        ]
         for members in group.detect_groups(remaining, cfg.group_radius):
             self._advance_group(members, cfg)
             moved.update(members)
@@ -187,13 +200,22 @@ class PelotonModel(Model):
         # tagging.
         broke = []
         for m in members:
-            if getattr(m, "break_cooldown", 0) == 0 and not m.solo and self.random.random() < strategy.breakaway_prob(m, v_group, cfg):
+            if (
+                getattr(m, "break_cooldown", 0) == 0
+                and not m.solo
+                and self.random.random() < strategy.breakaway_prob(m, v_group, cfg)
+            ):
                 m.solo = True
                 m.break_cooldown = cfg.breakaway_cooldown_steps
                 broke.append(m)
         if broke:
             for m in members:
-                if m not in broke and getattr(m, "break_cooldown", 0) == 0 and not m.solo and self.random.random() < strategy.follow_prob(m, broke, cfg):
+                if (
+                    m not in broke
+                    and getattr(m, "break_cooldown", 0) == 0
+                    and not m.solo
+                    and self.random.random() < strategy.follow_prob(m, broke, cfg)
+                ):
                     m.solo = True
                     m.break_cooldown = cfg.breakaway_cooldown_steps
 
@@ -223,10 +245,12 @@ class PelotonModel(Model):
             else:
                 v, cf_eff = v_group, cf_pack
 
-            m.wind_power = cfg.k_aero * cf_eff * v**3   # aerodynamic drag at the speed passed to update_stamina
+            m.wind_power = (
+                cfg.k_aero * cf_eff * v**3
+            )  # aerodynamic drag at the speed passed to update_stamina
             energy.update_stamina(m, energy.power_required(v, cf_eff, cfg), cfg)
             if m.w_prime <= 0.0:
-                v = min(v, m.s_cp*0.75)                 # exhausted: drop to sustainable speed
+                v = min(v, m.s_cp * 0.75)  # exhausted: drop to sustainable speed
             new_x = min(m.pos[0] + v * cfg.dt, cfg.road_length)
             self.space.move_agent(m, (new_x, m.pos[1]))
             m.exposure = _exposure(cf_eff, min_cf_eff)
@@ -245,4 +269,4 @@ class PelotonModel(Model):
                 agent.remove()
         self.n_finished = len(self.finish_order)
         if not len(self.agents):
-            self.running = False        # race over: stop the viz autoplay
+            self.running = False  # race over: stop the viz autoplay

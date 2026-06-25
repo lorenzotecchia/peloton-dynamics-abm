@@ -24,23 +24,26 @@ import numpy as np
 
 from peloton.model import PelotonModel
 
-# def _assign_utilities(agents, model) -> None:
+# def _assign_utilities(agents, model, cfg) -> None:
 #     """Utility = finishing position (winner highest); DNF scores 0 (worst)."""
 #     rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
-#     n = len(agents)
+#     decay = model.config.utility_decay  # lambda; larger -> steeper decay
+#
+#     if not model.finish_order:
+#         return None  # nessun vincitore
+#
 #     for a in agents:
-#         a.utility = (n - rank[a.unique_id]) if a.unique_id in rank else 0.0
+#         pos = rank[a.unique_id]
+#         a.utility = math.exp(-decay * pos)
 
 
 def _assign_utilities(agents, model, cfg) -> None:
     """Utility decays exponentially by finishing position; DNF = 0."""
     rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
-
     decay = model.config.utility_decay  # lambda; larger -> steeper decay
 
     if not model.finish_order:
         return None  # nessun vincitore
-
     individual_utility = {}
 
     for a in agents:
@@ -49,12 +52,10 @@ def _assign_utilities(agents, model, cfg) -> None:
             individual_utility[a.unique_id] = math.exp(-decay * pos)
         else:
             individual_utility[a.unique_id] = 0.0
-
     team_utility = np.zeros(cfg.n_teams)
 
     for a in agents:
         team_utility[a.team_id] += individual_utility[a.unique_id]
-
     # 3. Assegna a ogni agente la utility del proprio team
     for a in agents:
         a.utility = team_utility[a.team_id]
