@@ -1,0 +1,7 @@
+param_i,param_j,S2,S2_conf
+recovery_rate,breakaway_speed_frac,,
+recovery_rate,logit_lambda,,
+recovery_rate,k_s,,
+breakaway_speed_frac,logit_lambda,,
+breakaway_speed_frac,k_s,,
+logit_lambda,k_s,,

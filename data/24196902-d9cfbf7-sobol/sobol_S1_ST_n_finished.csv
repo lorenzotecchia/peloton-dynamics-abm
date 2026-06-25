@@ -1,0 +1,5 @@
+parameter,S1,S1_conf,ST,ST_conf
+recovery_rate,,,,
+breakaway_speed_frac,,,,
+logit_lambda,,,,
+k_s,,,,
