@@ -13,7 +13,9 @@
 # Morris screens all 18 model knobs and SAMPLES is the trajectory count r: the
 # screening literature uses r~10-50, so 20 is a solid default (not the Sobol-sized
 # 512). Total ~SAMPLES*(D+1) runs (D=18 params), each over GENERATIONS races x
-# REPLICATES seeds. Indices land in data/gsa_morris.csv; logs in jobs/logs/.
+# REPLICATES seeds. Output goes to <GSA_OUT_BASE>/<SLURM JOB ID>-<GIT HASH>-morris/
+# (GSA_OUT_BASE defaults to /gpfs/work5/0/prjs2142/gsa-agent-dump-per-run);
+# gsa_morris.csv lands there. Logs in jobs/logs/.
 
 set -euo pipefail
 

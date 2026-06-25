@@ -10,9 +10,11 @@
 # Defaults: SAMPLES=512, REPLICATES=10, GENERATIONS=150, MAX_STEPS=2500,
 #           ROAD_LENGTH=10000 (10 km), DT=2 (2 s), GROUP_RADIUS=3.
 # The scenario defaults (ROAD_LENGTH/DT/GROUP_RADIUS) match PelotonConfig.
-# Sobol does ~SAMPLES*(D+2) runs (D=4 params; use a power of 2 for SAMPLES),
-# each over GENERATIONS races x REPLICATES seeds. Indices land in
-# data/gsa_sobol.csv; logs in jobs/logs/.
+# Sobol does ~SAMPLES*(D+2) runs (D=5 params; use a power of 2 for SAMPLES),
+# each over GENERATIONS races x REPLICATES seeds. Output goes to
+# <GSA_OUT_BASE>/<SLURM JOB ID>-<GIT HASH>-sobol/ (GSA_OUT_BASE defaults to
+# /gpfs/work5/0/prjs2142/gsa-agent-dump-per-run); gsa_sobol.csv lands there.
+# Logs in jobs/logs/.
 
 set -euo pipefail
 
