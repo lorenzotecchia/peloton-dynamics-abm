@@ -7,15 +7,17 @@
 # Usage (from the project root, on a login node):
 #   bash scripts/job-cpu-rome-gsa-morris.sh [SAMPLES] [REPLICATES] [GENERATIONS] \
 #                                           [MAX_STEPS] [ROAD_LENGTH] [DT] [GROUP_RADIUS]
-# Defaults: SAMPLES=512, REPLICATES=10, GENERATIONS=150, MAX_STEPS=2500,
+# Defaults: SAMPLES=20, REPLICATES=10, GENERATIONS=150, MAX_STEPS=2500,
 #           ROAD_LENGTH=10000 (10 km), DT=2 (2 s), GROUP_RADIUS=3.
 # The scenario defaults (ROAD_LENGTH/DT/GROUP_RADIUS) match PelotonConfig.
-# Morris does ~SAMPLES*(D+1) runs (D=4 params), each over GENERATIONS races x
+# Morris screens all 18 model knobs and SAMPLES is the trajectory count r: the
+# screening literature uses r~10-50, so 20 is a solid default (not the Sobol-sized
+# 512). Total ~SAMPLES*(D+1) runs (D=18 params), each over GENERATIONS races x
 # REPLICATES seeds. Indices land in data/gsa_morris.csv; logs in jobs/logs/.
 
 set -euo pipefail
 
-SAMPLES="${1:-512}"
+SAMPLES="${1:-20}"
 REPLICATES="${2:-10}"
 GENERATIONS="${3:-150}"
 MAX_STEPS="${4:-2500}"
