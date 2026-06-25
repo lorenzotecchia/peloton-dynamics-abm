@@ -8,15 +8,22 @@ Usage:
 
 By default plots every "*_mean" column found in the CSV.
 """
+
 import argparse
 import os
 
 try:
     import pandas as pd
+    import matplotlib
+
+    # Use a non-interactive backend by default so the script works headless
+    matplotlib.use(os.environ.get("MPLBACKEND", "Agg"))
     import matplotlib.pyplot as plt
     import numpy as np
 except Exception as e:
-    raise RuntimeError("pandas, matplotlib and numpy are required. Install with 'pip install pandas matplotlib numpy'.")
+    raise RuntimeError(
+        "pandas, matplotlib and numpy are required. Install with 'pip install pandas matplotlib numpy'."
+    )
 
 
 def plot_learning(csv_path: str, out_path: str, params: list | None = None):
@@ -39,9 +46,11 @@ def plot_learning(csv_path: str, out_path: str, params: list | None = None):
     cols_per_row = min(4, n)
     rows = (n + cols_per_row - 1) // cols_per_row
 
-    fig, axes = plt.subplots(rows, cols_per_row, figsize=(4 * cols_per_row, 3 * rows), squeeze=False)
+    fig, axes = plt.subplots(
+        rows, cols_per_row, figsize=(4 * cols_per_row, 3 * rows), squeeze=False
+    )
 
-    generations = df['generation'].values
+    generations = df["generation"].values
 
     for i, cname in enumerate(cols):
         r = i // cols_per_row
@@ -52,34 +61,38 @@ def plot_learning(csv_path: str, out_path: str, params: list | None = None):
         if std_col in df.columns:
             std = df[std_col].values
             ax.fill_between(generations, mean - std, mean + std, alpha=0.2)
-        ax.plot(generations, mean, marker='o', ms=3)
+        ax.plot(generations, mean, marker="o", ms=3)
         ax.set_title(cname)
-        ax.set_xlabel('Generation')
+        ax.set_xlabel("Generation")
         ax.grid(alpha=0.3)
 
     # Turn off empty subplots
     for j in range(n, rows * cols_per_row):
         r = j // cols_per_row
         c = j % cols_per_row
-        axes[r][c].axis('off')
+        axes[r][c].axis("off")
 
     fig.tight_layout()
-    os.makedirs(os.path.dirname(out_path) or '.', exist_ok=True)
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fig.savefig(out_path, dpi=200)
-    print(f'Wrote learning plot to {out_path}')
+    print(f"Wrote learning plot to {out_path}")
 
 
 def main():
-    p = argparse.ArgumentParser(description='Plot learning CSV')
-    p.add_argument('--in', dest='infile', default='learning.csv')
-    p.add_argument('--out', dest='outfile', default='plots/learning.png')
-    p.add_argument('--params', dest='params', default=None,
-                   help='Comma-separated list of parameter columns to plot (exact column names).')
+    p = argparse.ArgumentParser(description="Plot learning CSV")
+    p.add_argument("--in", dest="infile", default="learning.csv")
+    p.add_argument("--out", dest="outfile", default="plots/learning.png")
+    p.add_argument(
+        "--params",
+        dest="params",
+        default=None,
+        help="Comma-separated list of parameter columns to plot (exact column names).",
+    )
     args = p.parse_args()
 
-    params = args.params.split(',') if args.params else None
+    params = args.params.split(",") if args.params else None
     plot_learning(args.infile, args.outfile, params)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

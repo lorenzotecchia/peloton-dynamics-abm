@@ -40,7 +40,9 @@ def run_learning(generations: int, max_steps: int, seed: int | None, out: str) -
     import pandas as pd
     import json
 
-    history, population = run_generations(generations, max_steps, PelotonConfig(seed=seed))
+    history, population = run_generations(
+        generations, max_steps, PelotonConfig(seed=seed)
+    )
     pd.DataFrame(history).to_csv(out, index=False)
     print(f"Ran {generations} generations; wrote coefficient trajectory to {out}.")
 
@@ -50,8 +52,10 @@ def run_learning(generations: int, max_steps: int, seed: int | None, out: str) -
         print("Wrote final population to population.json")
 
     first, last = history[0], history[-1]
-    print(f"  coop.delta mean: {first['coop.delta_mean']:.3f} -> {last['coop.delta_mean']:.3f}"
-          f"  (std {first['coop.delta_std']:.3f} -> {last['coop.delta_std']:.3f})")
+    print(
+        f"  coop.delta mean: {first['coop.delta_mean']:.3f} -> {last['coop.delta_mean']:.3f}"
+        f"  (std {first['coop.delta_std']:.3f} -> {last['coop.delta_std']:.3f})"
+    )
 
 
 def main() -> None:
@@ -61,9 +65,11 @@ def main() -> None:
     run_p = sub.add_parser("run", help="run one race headless and print finish order")
     run_p.add_argument("--max-steps", type=int, default=200)
 
-    learn_p = sub.add_parser("learn", help="run many races in sequence, learning between them")
+    learn_p = sub.add_parser(
+        "learn", help="run many races in sequence, learning between them"
+    )
     learn_p.add_argument("--generations", type=int, default=100)
-    learn_p.add_argument("--max-steps", type=int, default=400)
+    learn_p.add_argument("--max-steps", type=int, default=2000)
     learn_p.add_argument("--seed", type=int, default=None)
     learn_p.add_argument("--out", default="learning.csv")
 

@@ -13,13 +13,23 @@ from peloton import energy, strategy
 class CyclistAgent(Agent):
     """A single rider. State only; the model drives the dynamics."""
 
-    def __init__(self, model, team_id: int, coeffs: dict | None = None):
+    def __init__(
+        self,
+        model,
+        team_id: int,
+        coeffs: dict | None = None,
+        w_max10: dict | None = None,
+    ):
         super().__init__(model)
         self.team_id = team_id
 
         cfg = model.config
         # Heterogeneous engine; floor keeps the Gaussian tail physical.
-        self.w_max10 = max(50.0, model.random.gauss(cfg.w_max10_mean, cfg.w_max10_std))
+        self.w_max10 = (
+            w_max10
+            if w_max10 is not None
+            else max(50.0, model.random.gauss(cfg.w_max10_mean, cfg.w_max10_std))
+        )
         # Derived physiology, all filled by init_physiology below.
         self.cp = self.s_m = self.s_cp = self.s_sustain = self.w_full = self.w_prime = (
             0.0
