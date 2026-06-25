@@ -138,7 +138,17 @@ def _simulate(X, names, generations, max_steps, replicates, processes, y_path, b
     """
     done = []
     if y_path.exists():
-        done = list(np.loadtxt(y_path, delimiter=",", ndmin=2))
+        arr = np.loadtxt(y_path, delimiter=",", ndmin=2)
+        # Guard against resuming onto a checkpoint from an incompatible METRICS set
+        # (e.g. one written before time/stamina-spent targets were added): the column
+        # count must match or the appended rows would be ragged and Y[:, j] would lie.
+        if arr.shape[0] and arr.shape[1] != len(METRICS):
+            raise ValueError(
+                f"checkpoint {y_path} has {arr.shape[1]} metric columns but METRICS now "
+                f"defines {len(METRICS)} ({', '.join(METRICS)}); it was written by an "
+                f"incompatible run. Delete it and the matching .gsa_*_X.npy to start fresh."
+            )
+        done = list(arr)
     start = len(done)
     if start:
         print(f"  resuming from checkpoint: {start}/{len(X)} samples done", flush=True)
