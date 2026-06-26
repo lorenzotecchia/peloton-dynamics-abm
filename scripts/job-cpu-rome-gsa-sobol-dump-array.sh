@@ -14,7 +14,7 @@
 # Usage (from the project root, on a login node; run with bash, NOT sbatch):
 #   bash scripts/job-cpu-rome-gsa-sobol-dump-array.sh [SAMPLES] [GENERATIONS] \
 #                            [MAX_STEPS] [K] [ROAD_LENGTH] [DT] [GROUP_RADIUS]
-# Defaults: SAMPLES=64, GENERATIONS=150, MAX_STEPS=2000, K=8, ROAD_LENGTH=10000
+# Defaults: SAMPLES=512, GENERATIONS=150, MAX_STEPS=2000, K=8, ROAD_LENGTH=10000
 #           (10 km), DT=2 (2 s), GROUP_RADIUS=3. No replication (every race seed 0).
 # Env overrides: GSA_OUT_BASE (default /gpfs/work5/0/prjs2142/gsa-agent-dump-per-run),
 #                TASK_TIME (per-chunk wall time, default 02:00:00),
@@ -34,7 +34,7 @@ if [[ -n "${SLURM_JOB_ID:-}" ]]; then
 fi
 
 METHOD=sobol
-SAMPLES="${1:-64}"
+SAMPLES="${1:-512}"
 GENERATIONS="${2:-150}"
 MAX_STEPS="${3:-2000}"
 K="${4:-8}"                 # number of array chunks (= nodes used in parallel)

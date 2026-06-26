@@ -7,13 +7,13 @@
 # Usage (from the project root, on a login node):
 #   bash scripts/job-cpu-rome-gsa-sobol-dump.sh [SAMPLES] [GENERATIONS] \
 #                                [MAX_STEPS] [ROAD_LENGTH] [DT] [GROUP_RADIUS]
-# Defaults: SAMPLES=64, GENERATIONS=150, MAX_STEPS=2000, ROAD_LENGTH=10000 (10 km),
+# Defaults: SAMPLES=512, GENERATIONS=150, MAX_STEPS=2000, ROAD_LENGTH=10000 (10 km),
 #           DT=2 (2 s), GROUP_RADIUS=3. No replication (every race uses seed 0).
 # Sobol draws ~SAMPLES*(D+2) design rows (D=5; use a power of 2 for SAMPLES), each
-# run over GENERATIONS races and dumped in full: SAMPLES=64 -> ~448 rows x 150
-# gens ~= 67k races, ~45 min on 128 cores (runtime tracks rows*gens; calibrated
-# from ~12 min at 7168 rows x 10 gens). Fewer parameter points but a full
-# 150-generation learning trajectory dumped per point. Completed sample dirs
+# run over GENERATIONS races and dumped in full: SAMPLES=512 -> ~3584 rows x 150
+# gens ~= 538k races (runtime tracks rows*gens; calibrated from ~12 min at 7168
+# rows x 10 gens). Fewer parameter points but a full 150-generation learning
+# trajectory dumped per point. Completed sample dirs
 # persist as they finish, so a wall-clock kill only loses the samples still in
 # flight. Output goes to
 # <GSA_OUT_BASE>/<SLURM JOB ID>-<GIT HASH>-sobol-dump/ (GSA_OUT_BASE defaults to
@@ -27,7 +27,7 @@
 
 set -euo pipefail
 
-SAMPLES="${1:-64}"
+SAMPLES="${1:-512}"
 GENERATIONS="${2:-150}"
 MAX_STEPS="${3:-2000}"
 ROAD_LENGTH="${4:-10000}"
