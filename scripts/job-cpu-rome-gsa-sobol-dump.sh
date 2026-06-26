@@ -19,6 +19,11 @@
 # <GSA_OUT_BASE>/<SLURM JOB ID>-<GIT HASH>-sobol-dump/ (GSA_OUT_BASE defaults to
 # /gpfs/work5/0/prjs2142/gsa-agent-dump-per-run). Writes Parquet by default
 # (smaller); set PARQUET=0 for CSV. Logs in jobs/logs/.
+#
+# By default only the FINAL generation's race is dumped per sample (the full
+# learning loop still runs, so the dumped race is the converged one). Set
+# DUMP_ALL_GENERATIONS=1 to dump every generation's full per-step per-agent state
+# (the original behaviour; far more disk).
 
 set -euo pipefail
 
@@ -42,7 +47,7 @@ JOB_ID="$(sbatch --parsable --job-name=peloton-gsa-sobol-dump \
   --chdir="$PROJECT_ROOT" \
   --output=jobs/logs/peloton-gsa-sobol-dump-%j.out \
   --error=jobs/logs/peloton-gsa-sobol-dump-%j.err \
-  --export=ALL,METHOD=sobol,SAMPLES="$SAMPLES",GENERATIONS="$GENERATIONS",MAX_STEPS="$MAX_STEPS",ROAD_LENGTH="$ROAD_LENGTH",DT="$DT",GROUP_RADIUS="$GROUP_RADIUS",PARQUET="${PARQUET:-1}" \
+  --export=ALL,METHOD=sobol,SAMPLES="$SAMPLES",GENERATIONS="$GENERATIONS",MAX_STEPS="$MAX_STEPS",ROAD_LENGTH="$ROAD_LENGTH",DT="$DT",GROUP_RADIUS="$GROUP_RADIUS",PARQUET="${PARQUET:-1}",DUMP_ALL_GENERATIONS="${DUMP_ALL_GENERATIONS:-0}" \
   "$SCRIPT_DIR/_gsa-dump-job-body.sh")"
 JOB_ID="${JOB_ID%%;*}"  # --parsable may append ";cluster"; keep just the id
 

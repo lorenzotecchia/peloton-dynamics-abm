@@ -38,7 +38,13 @@ mkdir -p "$OUT_DIR"
 PARQUET_FLAG=()
 [[ "${PARQUET:-1}" == "1" ]] && PARQUET_FLAG=(--parquet)
 
-echo "[task $SLURM_ARRAY_TASK_ID] $METHOD dump rows $ROW_START..$ROW_END -> $OUT_DIR (procs=$SLURM_CPUS_PER_TASK, parquet=${PARQUET:-1})"
+# DUMP_ALL_GENERATIONS=0 (default) -> dump only the final generation's race per
+# sample (full learning loop still runs); set DUMP_ALL_GENERATIONS=1 to dump every
+# generation's full per-step per-agent state.
+LAST_GEN_FLAG=()
+[[ "${DUMP_ALL_GENERATIONS:-0}" != "1" ]] && LAST_GEN_FLAG=(--last-gen-only)
+
+echo "[task $SLURM_ARRAY_TASK_ID] $METHOD dump rows $ROW_START..$ROW_END -> $OUT_DIR (procs=$SLURM_CPUS_PER_TASK, parquet=${PARQUET:-1}, dump_all_generations=${DUMP_ALL_GENERATIONS:-0})"
 uv run python -m peloton.gsa_dump \
   --mode dump --method "$METHOD" \
   --x-file "$WORK_DIR/X.npy" \
@@ -51,4 +57,5 @@ uv run python -m peloton.gsa_dump \
   --group-radius "$GROUP_RADIUS" \
   --processes "$SLURM_CPUS_PER_TASK" \
   --out-dir "$OUT_DIR" \
-  "${PARQUET_FLAG[@]}"
+  "${PARQUET_FLAG[@]}" \
+  "${LAST_GEN_FLAG[@]}"

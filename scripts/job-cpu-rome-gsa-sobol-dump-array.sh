@@ -18,7 +18,9 @@
 #           (10 km), DT=2 (2 s), GROUP_RADIUS=3. No replication (every race seed 0).
 # Env overrides: GSA_OUT_BASE (default /gpfs/work5/0/prjs2142/gsa-agent-dump-per-run),
 #                TASK_TIME (per-chunk wall time, default 02:00:00),
-#                PARQUET (1=Parquet default, 0=CSV).
+#                PARQUET (1=Parquet default, 0=CSV),
+#                DUMP_ALL_GENERATIONS (0=dump only the final generation per sample,
+#                  the default; 1=dump every generation's full per-step state).
 # Output: <GSA_OUT_BASE>/<ARRAY JOB ID>-<GIT HASH>-sobol-dump/sobol/sample_<i>/...
 # Completed sample dirs persist as they finish, so a wall-clock kill only loses
 # the samples still in flight.
@@ -42,6 +44,7 @@ GROUP_RADIUS="${7:-3}"
 GSA_OUT_BASE="${GSA_OUT_BASE:-/gpfs/work5/0/prjs2142/gsa-agent-dump-per-run}"
 TASK_TIME="${TASK_TIME:-02:00:00}"
 PARQUET="${PARQUET:-1}"
+DUMP_ALL_GENERATIONS="${DUMP_ALL_GENERATIONS:-0}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -74,7 +77,7 @@ ARRAY_JOB_ID="$(sbatch --parsable \
   --chdir="$PROJECT_ROOT" \
   --output=jobs/logs/peloton-gsa-${METHOD}-dump-%A_%a.out \
   --error=jobs/logs/peloton-gsa-${METHOD}-dump-%A_%a.err \
-  --export=ALL,METHOD="$METHOD",WORK_DIR="$WORK_DIR",N_ROWS="$N_ROWS",CHUNK_SIZE="$CHUNK_SIZE",SAMPLES="$SAMPLES",GENERATIONS="$GENERATIONS",MAX_STEPS="$MAX_STEPS",ROAD_LENGTH="$ROAD_LENGTH",DT="$DT",GROUP_RADIUS="$GROUP_RADIUS",PARQUET="$PARQUET" \
+  --export=ALL,METHOD="$METHOD",WORK_DIR="$WORK_DIR",N_ROWS="$N_ROWS",CHUNK_SIZE="$CHUNK_SIZE",SAMPLES="$SAMPLES",GENERATIONS="$GENERATIONS",MAX_STEPS="$MAX_STEPS",ROAD_LENGTH="$ROAD_LENGTH",DT="$DT",GROUP_RADIUS="$GROUP_RADIUS",PARQUET="$PARQUET",DUMP_ALL_GENERATIONS="$DUMP_ALL_GENERATIONS" \
   "$SCRIPT_DIR/_gsa-dump-array-body.sh")"
 ARRAY_JOB_ID="${ARRAY_JOB_ID%%;*}"  # --parsable may append ";cluster"
 

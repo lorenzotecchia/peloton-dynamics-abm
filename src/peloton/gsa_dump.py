@@ -23,6 +23,10 @@ Output layout under <out-dir>:
                 agent_timeseries.csv  model_timeseries.csv  agent_meta.csv
                 finish_order.csv      config.json           manifest.json
 
+With ``--last-gen-only`` only the final generation's ``gen_<g>/`` bundle is written
+(the full learning loop still runs; intermediate generations evolve the coeffs but
+are not dumped) — far less disk for the common "just the converged race" case.
+
 Run count: Morris draws ~samples*(D+1) design rows (D=18), Sobol ~samples*(D+2)
 (D=5); each design row then runs `generations` races. Size --samples/--generations
 so the whole thing fits your walltime and disk.
@@ -60,7 +64,8 @@ def _dump_sample(task: tuple) -> tuple:
     race is recorded (``record_run``) and written (``write_bundle``) before the
     field evolves into the next one.
     """
-    idx, row, names, generations, max_steps, base, sample_dir, parquet = task
+    idx, row, names, generations, max_steps, base, sample_dir, parquet, \
+        last_gen_only = task
     sample_dir = Path(sample_dir)
     overrides = {n: (int(round(v)) if n in INT_PARAMS else float(v))
                  for n, v in zip(names, row)}
@@ -73,7 +78,11 @@ def _dump_sample(task: tuple) -> tuple:
         cfg = replace(PelotonConfig(seed=SEED), **base, **overrides)
         model = PelotonModel(config=cfg, population=population)
         data = record_run(cfg, max_steps, model=model)
-        write_bundle(data, str(sample_dir / f"gen_{gen:04d}"), parquet)
+        # Always run the full learning trajectory, but with `last_gen_only` only
+        # the final generation's race is written to disk (the others still evolve
+        # the coeffs forward, they're just not dumped).
+        if not last_gen_only or gen == generations - 1:
+            write_bundle(data, str(sample_dir / f"gen_{gen:04d}"), parquet)
         evolve(model.riders, model)
         population = [copy.deepcopy(r.coeffs) for r in model.riders]
 
@@ -93,7 +102,8 @@ def _sample_design(method, n) -> np.ndarray:
 
 
 def run_dump(method, n, generations, max_steps, processes, out_dir, parquet, base,
-             X=None, row_start=0, row_end=None, save_x=True) -> None:
+             X=None, row_start=0, row_end=None, save_x=True,
+             last_gen_only=False) -> None:
     """Dump every generation of a (chunk of a) sample design to disk.
 
     ``X`` lets a caller pass a pre-sampled design so a Slurm array of jobs all dump
@@ -101,7 +111,8 @@ def run_dump(method, n, generations, max_steps, processes, out_dir, parquet, bas
     this call to a contiguous row chunk -- the sample dir keeps its *global* index
     (``sample_<i>``) so chunks dumped by sibling jobs never collide and can share
     one out dir. ``save_x`` writes X.npy for provenance (the array wrapper does that
-    once on the login node, so its tasks pass False)."""
+    once on the login node, so its tasks pass False). ``last_gen_only`` dumps only
+    the final generation's race per sample (the learning loop still runs in full)."""
     problem = PROBLEMS[method]
     if X is None:
         X = _sample_design(method, n)
@@ -114,12 +125,13 @@ def run_dump(method, n, generations, max_steps, processes, out_dir, parquet, bas
     r_end = len(X) if row_end is None else min(row_end, len(X))
     tasks = [
         (i, X[i], problem["names"], generations, max_steps, base,
-         str(method_dir / f"sample_{i:04d}"), parquet)
+         str(method_dir / f"sample_{i:04d}"), parquet, last_gen_only)
         for i in range(row_start, r_end)
     ]
+    dumped = "last gen only" if last_gen_only else "all gens"
     print(f"[gsa-dump] {method}: {len(tasks)} samples (rows {row_start}..{r_end} "
-          f"of {len(X)}) x {generations} gens (seed {SEED}, no replication) "
-          f"base={base or 'defaults'}", flush=True)
+          f"of {len(X)}) x {generations} gens (seed {SEED}, no replication, "
+          f"dumping {dumped}) base={base or 'defaults'}", flush=True)
     with Pool(processes) as pool:
         for done, (idx, sd) in enumerate(pool.imap_unordered(_dump_sample, tasks), 1):
             print(f"  [{method}] sample {idx} dumped ({done}/{len(tasks)}) -> {sd}",
@@ -148,6 +160,10 @@ def main() -> None:
     p.add_argument("--out-dir", default="data")
     p.add_argument("--parquet", action="store_true",
                    help="write Parquet instead of CSV (needs pyarrow)")
+    p.add_argument("--last-gen-only", action="store_true",
+                   help="dump only the final generation's race per sample (the "
+                        "full learning loop still runs; intermediate generations "
+                        "evolve the coeffs but are not written to disk)")
     # Fixed scenario knobs (not SA-varied): override PelotonConfig for every sample.
     p.add_argument("--road-length", type=float, default=None, help="finish line in m")
     p.add_argument("--dt", type=float, default=None, help="seconds of race per step")
@@ -186,14 +202,16 @@ def main() -> None:
         X = np.load(args.x_file)
         run_dump(args.method, args.samples, args.generations, args.max_steps,
                  args.processes, args.out_dir, args.parquet, base,
-                 X=X, row_start=args.row_start, row_end=args.row_end, save_x=False)
+                 X=X, row_start=args.row_start, row_end=args.row_end, save_x=False,
+                 last_gen_only=args.last_gen_only)
         return
 
     # ── full mode (default): sample + dump every row in one process ──────────────
     methods = ["morris", "sobol"] if args.method == "both" else [args.method]
     for method in methods:
         run_dump(method, args.samples, args.generations, args.max_steps,
-                 args.processes, args.out_dir, args.parquet, base)
+                 args.processes, args.out_dir, args.parquet, base,
+                 last_gen_only=args.last_gen_only)
 
 
 if __name__ == "__main__":
