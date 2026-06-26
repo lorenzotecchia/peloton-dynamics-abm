@@ -37,6 +37,7 @@ from multiprocessing import Pool
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from SALib.sample import sobol as sobol_sample
 from SALib.sample.morris import sample as morris_sample
 
@@ -81,27 +82,44 @@ def _dump_sample(task: tuple) -> tuple:
     return idx, str(sample_dir)
 
 
-def run_dump(method, n, generations, max_steps, processes, out_dir, parquet, base) -> None:
-    """Sample `method`, then dump every generation of every sample to disk."""
+def _sample_design(method, n) -> np.ndarray:
+    """Draw the dump's SALib design matrix (Sobol uses calc_second_order=False)."""
     problem = PROBLEMS[method]  # Morris and Sobol vary different knob sets.
     if method == "morris":
-        X = morris_sample(problem, n, num_levels=_MORRIS_LEVELS)
-    elif method == "sobol":
-        X = sobol_sample.sample(problem, n, calc_second_order=False)
-    else:
-        raise ValueError(f"unknown method {method!r}")
+        return morris_sample(problem, n, num_levels=_MORRIS_LEVELS)
+    if method == "sobol":
+        return sobol_sample.sample(problem, n, calc_second_order=False)
+    raise ValueError(f"unknown method {method!r}")
+
+
+def run_dump(method, n, generations, max_steps, processes, out_dir, parquet, base,
+             X=None, row_start=0, row_end=None, save_x=True) -> None:
+    """Dump every generation of a (chunk of a) sample design to disk.
+
+    ``X`` lets a caller pass a pre-sampled design so a Slurm array of jobs all dump
+    the *same* matrix; when None we sample it here. ``row_start``/``row_end`` limit
+    this call to a contiguous row chunk -- the sample dir keeps its *global* index
+    (``sample_<i>``) so chunks dumped by sibling jobs never collide and can share
+    one out dir. ``save_x`` writes X.npy for provenance (the array wrapper does that
+    once on the login node, so its tasks pass False)."""
+    problem = PROBLEMS[method]
+    if X is None:
+        X = _sample_design(method, n)
 
     method_dir = Path(out_dir) / method
     method_dir.mkdir(parents=True, exist_ok=True)
-    np.save(method_dir / "X.npy", X)
+    if save_x:
+        np.save(method_dir / "X.npy", X)
 
+    r_end = len(X) if row_end is None else min(row_end, len(X))
     tasks = [
-        (i, row, problem["names"], generations, max_steps, base,
+        (i, X[i], problem["names"], generations, max_steps, base,
          str(method_dir / f"sample_{i:04d}"), parquet)
-        for i, row in enumerate(X)
+        for i in range(row_start, r_end)
     ]
-    print(f"[gsa-dump] {method}: {len(tasks)} samples x {generations} gens "
-          f"(seed {SEED}, no replication) base={base or 'defaults'}", flush=True)
+    print(f"[gsa-dump] {method}: {len(tasks)} samples (rows {row_start}..{r_end} "
+          f"of {len(X)}) x {generations} gens (seed {SEED}, no replication) "
+          f"base={base or 'defaults'}", flush=True)
     with Pool(processes) as pool:
         for done, (idx, sd) in enumerate(pool.imap_unordered(_dump_sample, tasks), 1):
             print(f"  [{method}] sample {idx} dumped ({done}/{len(tasks)}) -> {sd}",
@@ -112,6 +130,11 @@ def run_dump(method, n, generations, max_steps, processes, out_dir, parquet, bas
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--mode", choices=["full", "sample", "dump"], default="full",
+                   help="full=sample+dump all rows in one process (default); the other "
+                        "two split a run across a Slurm array: sample=write X.npy only "
+                        "(login node); dump=dump a --row-start/--row-end row chunk of a "
+                        "pre-sampled --x-file (array task)")
     p.add_argument("--method", choices=["morris", "sobol", "both"], default="morris")
     p.add_argument("--samples", type=int, default=2,
                    help="SALib N: Morris trajectories (~N*(D+1) rows) / Sobol base "
@@ -130,11 +153,43 @@ def main() -> None:
     p.add_argument("--dt", type=float, default=None, help="seconds of race per step")
     p.add_argument("--group-radius", type=float, default=None,
                    help="longitudinal pack radius in m")
+    # --- split-job args (used by sample / dump modes for the Slurm array) ---
+    p.add_argument("--x-file", default=None,
+                   help="path to X.npy: written by --mode sample, read by --mode dump")
+    p.add_argument("--row-start", type=int, default=0,
+                   help="first design row to dump (--mode dump)")
+    p.add_argument("--row-end", type=int, default=None,
+                   help="exclusive last design row to dump (--mode dump)")
     args = p.parse_args()
 
     base = {k: v for k, v in (("road_length", args.road_length), ("dt", args.dt),
                               ("group_radius", args.group_radius)) if v is not None}
 
+    # ── sample mode: draw X for one method and persist it (login node, seconds) ──
+    if args.mode == "sample":
+        if args.method == "both":
+            raise SystemExit("--mode sample needs a single --method (morris|sobol)")
+        X = _sample_design(args.method, args.samples)
+        xp = Path(args.x_file)
+        xp.parent.mkdir(parents=True, exist_ok=True)
+        np.save(xp, X)
+        pd.DataFrame(X, columns=PROBLEMS[args.method]["names"]).to_csv(
+            xp.with_name(xp.stem + "_index.csv"), index_label="sample_idx")
+        print(f"[gsa-dump] {args.method}: saved X {X.shape} -> {xp}")
+        print(f"[gsa-dump] n_rows={len(X)}")  # the array wrapper reads this to size chunks
+        return
+
+    # ── dump mode: dump a contiguous row chunk of a pre-sampled X (array task) ───
+    if args.mode == "dump":
+        if args.method == "both":
+            raise SystemExit("--mode dump needs a single --method (morris|sobol)")
+        X = np.load(args.x_file)
+        run_dump(args.method, args.samples, args.generations, args.max_steps,
+                 args.processes, args.out_dir, args.parquet, base,
+                 X=X, row_start=args.row_start, row_end=args.row_end, save_x=False)
+        return
+
+    # ── full mode (default): sample + dump every row in one process ──────────────
     methods = ["morris", "sobol"] if args.method == "both" else [args.method]
     for method in methods:
         run_dump(method, args.samples, args.generations, args.max_steps,
