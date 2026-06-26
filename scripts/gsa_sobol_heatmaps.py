@@ -1,18 +1,22 @@
-"""Create heatmaps from Sobol GSA per-run dumps.
+"""Create heatmaps from Sobol GSA per-run agent dumps.
 
-The script expects a Sobol dump directory produced by ``python -m peloton.gsa``
-with one ``sample_index.csv`` and run folders named ``s00000_r00``. It filters
-the design matrix to the samples nearest to a target recovery rate and utility
-decay, aggregates all available replicates, and plots metrics over
+Reads a Sobol *agent-dump* tree produced by ``peloton.gsa_dump`` (the
+scripts/job-cpu-rome-gsa-sobol-dump.sh single-node job and its parallel
+...-dump-array.sh sibling): a ``sobol/`` directory holding ``X.npy`` (the design
+matrix; the array job also drops a ``sample_index.csv``) and one ``sample_<i>/``
+folder per design row, each containing a ``gen_<g>/`` bundle per evolution
+generation. For each sample only the *final* generation is used -- the end-state
+the field evolved to. It filters the design matrix to the samples nearest a
+target recovery rate and utility decay and plots metrics over
 ``breakaway_speed_frac`` x ``k_s``.
 
 Examples:
     python scripts/gsa_sobol_heatmaps.py \
-        --sobol-dir /path/to/123456-abcdef-sobol \
+        --sobol-dir /path/to/123456-abcdef-sobol-dump \
         --out-dir /path/to/heatmaps
 
     python scripts/gsa_sobol_heatmaps.py \
-        --sobol-dir /path/to/job-root-with-sobol-child \
+        --sobol-dir /path/to/123456-abcdef-sobol-dump/sobol \
         --bins 12 --slice-nearest 200
 """
 
@@ -27,8 +31,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from peloton.gsa import PROBLEM_SOBOL
 
-RUN_RE = re.compile(r"^s(?P<sample>\d+)_r(?P<replicate>\d+)$")
+
+# Dump layout: sobol/sample_<i>/gen_<g>/<tables>. One folder per design row, one
+# bundle per evolution generation inside it.
+SAMPLE_RE = re.compile(r"^sample_(?P<sample>\d+)$")
+GEN_RE = re.compile(r"^gen_(?P<gen>\d+)$")
+
+# Column order of X.npy == the Sobol problem's parameter order (gsa_dump samples
+# PROBLEM_SOBOL); used to rebuild the index when only X.npy is present.
+SOBOL_PARAM_NAMES = PROBLEM_SOBOL["names"]
 
 
 METRICS = {
@@ -41,27 +54,58 @@ METRICS = {
 }
 
 
+def _has_design(d: Path) -> bool:
+    """A dump dir is identifiable by its design matrix (X.npy) or sample index."""
+    return (d / "X.npy").exists() or (d / "sample_index.csv").exists()
+
+
 def resolve_sobol_dir(path: Path) -> Path:
-    """Accept either the Sobol directory itself or a parent containing sobol/."""
-    if (path / "sample_index.csv").exists():
+    """Accept either the sobol/ dump directory itself or a parent containing it."""
+    if _has_design(path):
         return path
     child = path / "sobol"
-    if (child / "sample_index.csv").exists():
+    if _has_design(child):
         return child
     raise FileNotFoundError(
-        f"Could not find sample_index.csv in {path} or {child}. "
-        "Pass the directory that contains the Sobol run folders."
+        f"Could not find X.npy or sample_index.csv in {path} or {child}. "
+        "Pass the dump directory (or its parent) that holds the sample_<i>/ folders."
     )
 
 
+def load_index(sobol_dir: Path) -> pd.DataFrame:
+    """Load the design matrix as a DataFrame with a ``sample_idx`` column.
+
+    Prefers ``sample_index.csv`` (written by the array job) and otherwise rebuilds
+    it from ``X.npy`` (single-node job), labelling the columns with the Sobol
+    parameter names. Row order is the design-row / ``sample_<i>`` index either way.
+    """
+    idx_csv = sobol_dir / "sample_index.csv"
+    if idx_csv.exists():
+        index = pd.read_csv(idx_csv)
+        if "sample_idx" not in index.columns:
+            index = index.reset_index().rename(columns={"index": "sample_idx"})
+        return index
+    x_npy = sobol_dir / "X.npy"
+    if x_npy.exists():
+        X = np.load(x_npy)
+        index = pd.DataFrame(X, columns=SOBOL_PARAM_NAMES)
+        index.insert(0, "sample_idx", np.arange(len(X)))
+        return index
+    raise FileNotFoundError(f"No sample_index.csv or X.npy in {sobol_dir}")
+
+
 def read_table(run_dir: Path, stem: str) -> pd.DataFrame:
-    """Read a parquet table, falling back to CSV for older dumps."""
+    """Read a parquet table, falling back to CSV. An empty table (e.g. a
+    finish_order from a race nobody finished) comes back as an empty DataFrame."""
     parquet_path = run_dir / f"{stem}.parquet"
     csv_path = run_dir / f"{stem}.csv"
     if parquet_path.exists():
         return pd.read_parquet(parquet_path)
     if csv_path.exists():
-        return pd.read_csv(csv_path)
+        try:
+            return pd.read_csv(csv_path)
+        except pd.errors.EmptyDataError:
+            return pd.DataFrame()
     raise FileNotFoundError(f"Missing {stem}.parquet or {stem}.csv in {run_dir}")
 
 
@@ -138,22 +182,32 @@ def summarize_run(run_dir: Path) -> dict:
 
 
 def collect_runs(sobol_dir: Path, selected: pd.DataFrame) -> pd.DataFrame:
+    """One row per selected sample, read from its *final* generation -- the
+    end-state the field evolved to (gen folders sort numerically by zero-pad)."""
     selected_ids = set(int(v) for v in selected["sample_idx"])
     param_lookup = selected.set_index("sample_idx")
     rows = []
     missing = 0
 
-    for run_dir in sorted(p for p in sobol_dir.iterdir() if p.is_dir()):
-        match = RUN_RE.match(run_dir.name)
-        if not match:
+    for sample_dir in sorted(p for p in sobol_dir.iterdir() if p.is_dir()):
+        sample_match = SAMPLE_RE.match(sample_dir.name)
+        if not sample_match:
             continue
-        sample_idx = int(match.group("sample"))
-        replicate = int(match.group("replicate"))
+        sample_idx = int(sample_match.group("sample"))
         if sample_idx not in selected_ids:
             continue
 
+        gen_dirs = sorted(g for g in sample_dir.iterdir()
+                          if g.is_dir() and GEN_RE.match(g.name))
+        if not gen_dirs:
+            missing += 1
+            print(f"[skip] no gen_<g> folders in {sample_dir}")
+            continue
+        final_gen_dir = gen_dirs[-1]            # highest gen index = end of evolution
+        generation = int(GEN_RE.match(final_gen_dir.name).group("gen"))
+
         try:
-            summary = summarize_run(run_dir)
+            summary = summarize_run(final_gen_dir)
         except FileNotFoundError as exc:
             missing += 1
             print(f"[skip] {exc}")
@@ -162,8 +216,8 @@ def collect_runs(sobol_dir: Path, selected: pd.DataFrame) -> pd.DataFrame:
         params = param_lookup.loc[sample_idx]
         rows.append({
             "sample_idx": sample_idx,
-            "replicate": replicate,
-            "run_dir": str(run_dir),
+            "generation": generation,
+            "run_dir": str(final_gen_dir),
             "recovery_rate": float(params["recovery_rate"]),
             "breakaway_speed_frac": float(params["breakaway_speed_frac"]),
             "utility_decay": float(params["utility_decay"]),
@@ -174,10 +228,11 @@ def collect_runs(sobol_dir: Path, selected: pd.DataFrame) -> pd.DataFrame:
 
     if not rows:
         raise RuntimeError(
-            "No matching run folders were found. Check --sobol-dir and the slice settings."
+            "No matching sample_<i>/gen_<g> folders were found. Check --sobol-dir "
+            "and the slice settings."
         )
     if missing:
-        print(f"[warn] skipped {missing} incomplete run folder(s)")
+        print(f"[warn] skipped {missing} sample folder(s) with no readable final generation")
     return pd.DataFrame(rows)
 
 
@@ -246,9 +301,7 @@ def main() -> None:
     sobol_dir = resolve_sobol_dir(args.sobol_dir)
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
-    index = pd.read_csv(sobol_dir / "sample_index.csv")
-    if "sample_idx" not in index.columns:
-        index = index.reset_index().rename(columns={"index": "sample_idx"})
+    index = load_index(sobol_dir)
 
     selected, slice_info = choose_slice(
         index=index,
