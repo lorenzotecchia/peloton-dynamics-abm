@@ -94,13 +94,28 @@ def load_index(sobol_dir: Path) -> pd.DataFrame:
     raise FileNotFoundError(f"No sample_index.csv or X.npy in {sobol_dir}")
 
 
+class BundleError(Exception):
+    """A generation bundle is missing or only partially written -- e.g. a 0-byte
+    parquet left by a job that was killed mid-write (disk quota / timeout). Such a
+    generation is skipped so only samples with complete data are plotted."""
+
+
 def read_table(run_dir: Path, stem: str) -> pd.DataFrame:
-    """Read a parquet table, falling back to CSV. An empty table (e.g. a
-    finish_order from a race nobody finished) comes back as an empty DataFrame."""
+    """Read a parquet table, falling back to CSV.
+
+    A legitimately empty table (e.g. a finish_order from a race nobody finished)
+    comes back as an empty DataFrame. A truncated/corrupt parquet -- a 0-byte file
+    or one pyarrow can't open -- raises ``BundleError`` so the caller can skip that
+    generation instead of feeding garbage into the metrics."""
     parquet_path = run_dir / f"{stem}.parquet"
     csv_path = run_dir / f"{stem}.csv"
     if parquet_path.exists():
-        return pd.read_parquet(parquet_path)
+        if parquet_path.stat().st_size == 0:
+            raise BundleError(f"0-byte parquet (incomplete write): {parquet_path}")
+        try:
+            return pd.read_parquet(parquet_path)
+        except Exception as exc:  # ArrowInvalid (truncated), OSError, ...
+            raise BundleError(f"unreadable parquet {parquet_path}: {exc}") from exc
     if csv_path.exists():
         try:
             return pd.read_csv(csv_path)
@@ -181,13 +196,31 @@ def summarize_run(run_dir: Path) -> dict:
     }
 
 
+def _latest_complete_generation(gen_dirs: list[Path]) -> tuple[int, dict] | None:
+    """Summarise the highest generation whose bundle fully reads.
+
+    Walks generations from the last toward the first (closest to the evolution
+    end-state first) and returns ``(generation, summary)`` for the first complete
+    one, or ``None`` if every generation is missing/partially written -- the case
+    when a disk-quota/timeout kill truncated the sample's final dumps."""
+    for gen_dir in reversed(gen_dirs):
+        generation = int(GEN_RE.match(gen_dir.name).group("gen"))
+        try:
+            return generation, summarize_run(gen_dir)
+        except (BundleError, FileNotFoundError) as exc:
+            print(f"[skip-gen] {exc}")
+    return None
+
+
 def collect_runs(sobol_dir: Path, selected: pd.DataFrame) -> pd.DataFrame:
-    """One row per selected sample, read from its *final* generation -- the
-    end-state the field evolved to (gen folders sort numerically by zero-pad)."""
+    """One row per selected sample, read from its latest *complete* generation --
+    the closest available end-state (gen folders sort numerically by zero-pad).
+    Samples whose dirs are absent or hold no complete generation are dropped, so a
+    partially-finished dump (e.g. cut short by disk quota) still plots."""
     selected_ids = set(int(v) for v in selected["sample_idx"])
     param_lookup = selected.set_index("sample_idx")
     rows = []
-    missing = 0
+    skipped_samples = 0
 
     for sample_dir in sorted(p for p in sobol_dir.iterdir() if p.is_dir()):
         sample_match = SAMPLE_RE.match(sample_dir.name)
@@ -199,25 +232,18 @@ def collect_runs(sobol_dir: Path, selected: pd.DataFrame) -> pd.DataFrame:
 
         gen_dirs = sorted(g for g in sample_dir.iterdir()
                           if g.is_dir() and GEN_RE.match(g.name))
-        if not gen_dirs:
-            missing += 1
-            print(f"[skip] no gen_<g> folders in {sample_dir}")
+        result = _latest_complete_generation(gen_dirs) if gen_dirs else None
+        if result is None:
+            skipped_samples += 1
+            print(f"[skip] no complete generation in {sample_dir}")
             continue
-        final_gen_dir = gen_dirs[-1]            # highest gen index = end of evolution
-        generation = int(GEN_RE.match(final_gen_dir.name).group("gen"))
-
-        try:
-            summary = summarize_run(final_gen_dir)
-        except FileNotFoundError as exc:
-            missing += 1
-            print(f"[skip] {exc}")
-            continue
+        generation, summary = result
 
         params = param_lookup.loc[sample_idx]
         rows.append({
             "sample_idx": sample_idx,
             "generation": generation,
-            "run_dir": str(final_gen_dir),
+            "run_dir": str(sample_dir / f"gen_{generation:04d}"),
             "recovery_rate": float(params["recovery_rate"]),
             "breakaway_speed_frac": float(params["breakaway_speed_frac"]),
             "utility_decay": float(params["utility_decay"]),
@@ -228,11 +254,12 @@ def collect_runs(sobol_dir: Path, selected: pd.DataFrame) -> pd.DataFrame:
 
     if not rows:
         raise RuntimeError(
-            "No matching sample_<i>/gen_<g> folders were found. Check --sobol-dir "
-            "and the slice settings."
+            "No sample with a complete generation was found among the selected "
+            "rows. Check --sobol-dir and the slice settings."
         )
-    if missing:
-        print(f"[warn] skipped {missing} sample folder(s) with no readable final generation")
+    if skipped_samples:
+        print(f"[warn] skipped {skipped_samples} selected sample(s) with no complete data")
+    print(f"[collect] using {len(rows)} sample(s) with data")
     return pd.DataFrame(rows)
 
 
