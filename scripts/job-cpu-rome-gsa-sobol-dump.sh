@@ -43,7 +43,7 @@ JOB_ID="$(sbatch --parsable --job-name=peloton-gsa-sobol-dump \
   --nodes=1 --ntasks=1 \
   --gpus=0 \
   --cpus-per-task=128 \
-  --time=02:00:00 \
+  --time=04:00:00 \
   --chdir="$PROJECT_ROOT" \
   --output=jobs/logs/peloton-gsa-sobol-dump-%j.out \
   --error=jobs/logs/peloton-gsa-sobol-dump-%j.err \
