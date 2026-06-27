@@ -34,6 +34,7 @@ consumed, summed over the field and per-rider). Fixed scenario knobs
 
 import argparse
 import os
+import time
 from dataclasses import replace
 from multiprocessing import Pool
 from pathlib import Path
@@ -135,6 +136,37 @@ def _evaluate(args: tuple) -> np.ndarray:
     return out.mean(axis=0)
 
 
+def _fmt_dur(seconds: float) -> str:
+    """Human-readable h/m/s for a duration (used by the live progress line)."""
+    if not np.isfinite(seconds) or seconds < 0:
+        return "?"
+    seconds = int(seconds)
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h{m:02d}m"
+    if m:
+        return f"{m}m{s:02d}s"
+    return f"{s}s"
+
+
+def _print_progress(k: int, total: int, start: int, t0: float) -> None:
+    """Print '[k/total] pct  elapsed  eta  rate' from the throughput so far.
+
+    ETA extrapolates from samples completed in *this* process (k-start) over the
+    wall time since it began, so a checkpoint-resume doesn't skew the rate.
+    """
+    elapsed = time.time() - t0
+    completed = k - start
+    if completed <= 0:
+        return
+    rate = completed / elapsed                       # samples per second
+    eta = (total - k) / rate if rate > 0 else float("inf")
+    print(f"  [{k}/{total}] {100 * k / total:5.1f}%  "
+          f"elapsed {_fmt_dur(elapsed)}  eta {_fmt_dur(eta)}  "
+          f"({rate * 3600:.0f} samples/hr)", flush=True)
+
+
 def _simulate(X, names, generations, max_steps, replicates, processes, base,
               y_path=None) -> np.ndarray:
     """Evaluate every sample row in parallel -> Y of shape (n_samples, n_metrics).
@@ -163,16 +195,25 @@ def _simulate(X, names, generations, max_steps, replicates, processes, base,
         print(f"  resuming from checkpoint: {start}/{len(X)} samples done", flush=True)
 
     tasks = [(row, names, generations, max_steps, replicates, base) for row in X[start:]]
-    print(f"  evaluating {len(tasks)} samples x {replicates} reps x {generations} gens ...",
-          flush=True)
-    if y_path is None:
+    total = len(X)
+    print(f"  evaluating {len(tasks)} samples x {replicates} reps x {generations} gens "
+          f"on {processes} procs (progress + eta printed per sample) ...", flush=True)
+    t0 = time.time()
+    # imap keeps row order, so checkpoint row k is always written after k-1. The
+    # checkpoint file (full mode) is opened for append; chunked evaluate mode has
+    # no y_path and just collects rows in memory. Both report live progress.
+    fh = open(y_path, "a") if y_path is not None else None
+    try:
         with Pool(processes) as pool:
-            return np.array(pool.map(_evaluate, tasks))
-    with Pool(processes) as pool, open(y_path, "a") as fh:
-        for row in pool.imap(_evaluate, tasks):   # ordered: row k appended after k-1
-            fh.write(",".join(repr(float(v)) for v in row) + "\n")
-            fh.flush()
-            done.append(row)
+            for k, row in enumerate(pool.imap(_evaluate, tasks), start=start + 1):
+                if fh is not None:
+                    fh.write(",".join(repr(float(v)) for v in row) + "\n")
+                    fh.flush()
+                done.append(row)
+                _print_progress(k, total, start, t0)
+    finally:
+        if fh is not None:
+            fh.close()
     return np.array(done)
 
 

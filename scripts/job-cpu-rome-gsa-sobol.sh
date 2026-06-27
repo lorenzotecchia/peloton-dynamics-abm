@@ -59,7 +59,9 @@ while [[ ! -e "$OUT_FILE" ]]; do
   fi
   sleep 2
 done
-echo "Log is live. Streaming stdout until the job finishes"
+echo "Log is live. Streaming stdout until the job finishes."
+echo "A per-sample progress line ([k/total] pct, elapsed, eta, samples/hr) is"
+echo "printed as the design matrix is evaluated, so you can gauge the time left."
 echo "(Ctrl-C stops watching; the job keeps running on the cluster)..."
 echo "----------------------------------------------------------------------"
 tail -n +1 -F "$OUT_FILE" &
