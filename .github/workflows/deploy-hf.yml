@@ -5,8 +5,8 @@ on:
     branches: [master]
   workflow_dispatch:        # lets you trigger a deploy by hand from the Actions tab
 
-# HF deploy = force-push this repo to the Space's git remote. The Space rebuilds
-# from the Dockerfile on every push.
+# HF deploy = force-push a single snapshot to the Space's git remote. The Space
+# rebuilds from the Dockerfile on every push.
 env:
   HF_USERNAME: lorenzotecchia
   HF_SPACE: peloton-abm           
@@ -16,13 +16,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0          # full history; HF wants a real git push
-          lfs: true
       - name: Push to Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          # HF rejects plain binary blobs (the data-SA/ research plots) and scans
+          # every pushed object, so we can't push our git history. The Space only
+          # needs the current tree to build from the Dockerfile, so deploy a single
+          # orphan commit with data-SA/ stripped.
+          # ponytail: orphan snapshot, not LFS/xet — add xet only if the Space
+          # itself ever needs to serve those binaries.
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git rm -r --quiet --cached data-SA
+          git checkout --orphan hf-deploy
+          git commit --quiet -m "Deploy snapshot ${GITHUB_SHA}"
           git push --force \
             "https://${HF_USERNAME}:${HF_TOKEN}@huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE}" \
-            HEAD:main
+            hf-deploy:main
