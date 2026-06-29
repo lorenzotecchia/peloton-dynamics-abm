@@ -30,12 +30,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 mkdir -p "$PROJECT_ROOT/jobs/logs"
 
+# seq 518sample needs around 37 hours so make it 40 hours
 JOB_ID="$(sbatch --parsable --job-name=peloton-gsa-sobol \
   --partition=rome \
   --nodes=1 --ntasks=1 \
   --gpus=0 \
   --cpus-per-task=128 \
-  --time=72:00:00 \
+  --time=40:00:00 \
   --chdir="$PROJECT_ROOT" \
   --output=jobs/logs/peloton-gsa-sobol-%j.out \
   --error=jobs/logs/peloton-gsa-sobol-%j.err \
