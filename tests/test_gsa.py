@@ -5,10 +5,13 @@ from peloton import gsa
 
 
 def _check(method, index_cols, tmp_path):
-    df = gsa.run_method(method, n=4, generations=2, max_steps=30, replicates=1,
-                        processes=1, out_dir=tmp_path)
+    # Short road + enough steps so races actually finish: the Total*/Mean* time
+    # metrics are otherwise constant (all DNF), giving Sobol a zero-variance
+    # column and NaN indices.
+    df, _s2 = gsa.run_method(method, n=8, generations=2, max_steps=120, replicates=1,
+                             processes=1, out_dir=tmp_path, base={"road_length": 80.0})
     # one row per (metric, param)
-    assert len(df) == len(gsa.METRICS) * gsa.PROBLEM["num_vars"]
+    assert len(df) == len(gsa.METRICS) * gsa.PROBLEMS[method]["num_vars"]
     assert set(df["metric"]) == set(gsa.METRICS)
     for col in index_cols:
         assert df[col].notna().all(), f"{method} {col} has NaNs"

@@ -67,7 +67,8 @@ def test_run_generations_records_coefficient_trajectories():
     # default_coeffs (Gaussian around the configured means), so the spread is
     # already nonzero before any learning, and the mean sits near the default.
     assert history[0]["coop.delta_std"] > 0.0
-    assert abs(history[0]["coop.delta_mean"] - 5.0) < 3.0  # ~DEFAULT mean, small-n scatter
+    # DEFAULT_COEFF_MEANS is 0.0 (std 5.0), so the seeded mean sits near 0.
+    assert abs(history[0]["coop.delta_mean"] - 0.0) < 3.0  # ~DEFAULT mean, small-n scatter
 
 
 def test_save_population_roundtrips_and_replays(tmp_path, monkeypatch):
