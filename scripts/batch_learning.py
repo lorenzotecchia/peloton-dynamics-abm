@@ -3,6 +3,10 @@
 Outputs:
 1. Distribution of final mean strategy parameters across replications.
 2. Learning-vs-skill plot: per-agent parameter change (gen0 -> genN) vs w_max10.
+
+Supports parallel execution across replications via --workers (each
+replication/seed is fully independent, so this parallelizes embarrassingly
+well across CPUs on a single node).
 """
 
 from __future__ import annotations
@@ -11,7 +15,9 @@ import argparse
 import copy
 import json
 import math
+import random
 import statistics
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -26,6 +32,33 @@ import matplotlib.pyplot as plt
 from peloton.config import PelotonConfig
 from peloton.evolution import _coeff_stats, _utility_stats, evolve
 from peloton.model import PelotonModel
+
+COLORS = {
+    "main": "tab:blue",
+    "fit": "tab:red",
+    "accent": "tab:green",
+    "hist": "tab:blue",
+}
+
+
+def set_publication_style():
+    plt.rcParams.update(
+        {
+            "figure.dpi": 120,
+            "savefig.dpi": 300,
+            "font.size": 11,
+            "axes.titlesize": 13,
+            "axes.labelsize": 11,
+            "legend.fontsize": 10,
+            "xtick.labelsize": 10,
+            "ytick.labelsize": 10,
+            "axes.grid": True,
+            "grid.alpha": 0.25,
+            "grid.linestyle": "--",
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+        }
+    )
 
 
 def _flatten_coeffs(coeffs: dict) -> dict[str, float]:
@@ -56,10 +89,14 @@ def _coeff_change(initial: dict, final: dict) -> dict[str, float]:
 def run_replication(
     seed: int, generations: int, max_steps: int, output_dir: Path
 ) -> dict | None:
-    """Run one replication in-process and save generation + agent learning data."""
-    cfg = PelotonConfig(seed=seed)
+    """Run one replication in-process and save generation + agent learning data.
 
-    import random
+    This is the unit of work distributed across worker processes when
+    --workers > 1: it only touches files specific to its own `seed`, so it is
+    safe to run concurrently with other replications writing into the same
+    output_dir.
+    """
+    cfg = PelotonConfig(seed=seed)
 
     rng = random.Random(seed)
     physiology = [
@@ -139,16 +176,42 @@ def run_all_replications(
     generations: int = 100,
     max_steps: int = 400,
     output_dir: str = "data/batch_learning",
+    workers: int = 1,
 ) -> list[dict]:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    replications: list[dict] = []
-    for seed in range(num_replications):
-        print(f"Running {seed + 1}/{num_replications}...", end="\r")
-        rep = run_replication(seed, generations, max_steps, out)
-        if rep:
-            replications.append(rep)
-    print(f"Completed {len(replications)}/{num_replications} replications.")
+
+    if workers <= 1:
+        replications: list[dict] = []
+        for seed in range(num_replications):
+            print(f"Running {seed + 1}/{num_replications}...", end="\r")
+            rep = run_replication(seed, generations, max_steps, out)
+            if rep:
+                replications.append(rep)
+        print(f"Completed {len(replications)}/{num_replications} replications.")
+        return replications
+
+    replications = []
+    completed = 0
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(run_replication, seed, generations, max_steps, out): seed
+            for seed in range(num_replications)
+        }
+        for future in as_completed(futures):
+            seed = futures[future]
+            try:
+                rep = future.result()
+            except Exception as exc:  # noqa: BLE001 - surface which seed failed
+                print(f"\nReplication seed={seed} raised an exception: {exc!r}")
+                continue
+            completed += 1
+            print(
+                f"Completed {completed}/{num_replications} (seed {seed})...", end="\r"
+            )
+            if rep:
+                replications.append(rep)
+    print(f"\nCompleted {len(replications)}/{num_replications} replications.")
     return replications
 
 
@@ -220,13 +283,22 @@ def plot_learning_vs_skill(agent_df: pd.DataFrame, plot_dir: Path) -> Path | Non
     corr = float(np.corrcoef(x, y)[0, 1]) if len(agent_df) > 1 else 0.0
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    axes[0].scatter(x, y, s=18, alpha=0.35, color=COLORS["main"], edgecolors="none")
 
-    axes[0].scatter(x, y, s=12, alpha=0.25)
     if len(agent_df) > 2:
-        slope, intercept = np.polyfit(x, y, deg=1)
+        slope, intercept = np.polyfit(x, y, 1)
         xx = np.linspace(x.min(), x.max(), 200)
-        axes[0].plot(xx, slope * xx + intercept, color="tab:red", lw=2)
-    axes[0].set_title(f"Agent learning vs skill (r={corr:.3f})")
+        yy = slope * xx + intercept
+        axes[0].plot(
+            xx,
+            yy,
+            lw=2.5,
+            color=COLORS["fit"],
+            label=f"fit: y={slope:.2e}x+{intercept:.2e}",
+        )
+        axes[0].legend(frameon=False)
+
+    axes[0].set_title(f"Learning vs skill (r={corr:.3f})")
     axes[0].set_xlabel("Initial w_max10")
     axes[0].set_ylabel("Mean |Δ parameter| (gen0 -> genN)")
     axes[0].grid(alpha=0.3)
@@ -235,13 +307,25 @@ def plot_learning_vs_skill(agent_df: pd.DataFrame, plot_dir: Path) -> Path | Non
     binned = agent_df.copy()
     binned["w_bin"] = pd.qcut(binned["w_max10"], q=bins, duplicates="drop")
     grouped = (
-        binned.groupby("w_bin", observed=False)["change_mean_abs"]
-        .agg(["mean", "std"])
+        binned.groupby("w_bin", observed=True)["change_mean_abs"]
+        .agg(["mean", "std", "count"])
         .reset_index()
     )
-    mids = np.array([interval.mid for interval in grouped["w_bin"]])
-    yerr = grouped["std"].fillna(0.0).to_numpy()
-    axes[1].errorbar(mids, grouped["mean"], yerr=yerr, fmt="o-", capsize=3)
+
+    centers = grouped["w_bin"].apply(lambda x: x.mid).to_numpy()
+    means = grouped["mean"].to_numpy()
+    stds = grouped["std"].fillna(0).to_numpy()
+    counts = grouped["count"].to_numpy()
+
+    axes[1].errorbar(
+        centers,
+        means,
+        yerr=stds / np.sqrt(counts),
+        fmt="o-",
+        capsize=4,
+        lw=2,
+        markersize=5,
+    )
     axes[1].set_title("Average learning by skill bin")
     axes[1].set_xlabel("Initial w_max10 (bin midpoint)")
     axes[1].set_ylabel("Mean |Δ parameter|")
@@ -270,13 +354,23 @@ def plot_final_mean_distributions(
         r, c = divmod(i, cols)
         ax = axes[r][c]
         values = coeff_aggregates[key]["values"]
-        ax.hist(values, bins=18, alpha=0.8, color="tab:blue")
+        ax.hist(
+            values,
+            bins="fd",  # Freedman–Diaconis rule (molto meglio)
+            density=True,
+            alpha=0.85,
+            color=COLORS["hist"],
+            edgecolor="black",
+            linewidth=0.6,
+        )
+
+        ax.set_ylabel("Density")
         ax.set_title(key)
         ax.grid(alpha=0.25)
     for j in range(n, rows * cols):
         r, c = divmod(j, cols)
         axes[r][c].axis("off")
-    fig.tight_layout()
+    fig.subplots_adjust(hspace=0.35, wspace=0.25)
     out = plot_dir / "final_mean_parameter_distributions.png"
     fig.savefig(out, dpi=220)
     plt.close(fig)
@@ -346,6 +440,12 @@ def main() -> None:
     parser.add_argument("--max-steps", type=int, default=400)
     parser.add_argument("--output-dir", default="data/batch_learning")
     parser.add_argument("--skip-run", action="store_true")
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="number of parallel processes (1 = sequential)",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -359,6 +459,7 @@ def main() -> None:
             generations=args.generations,
             max_steps=args.max_steps,
             output_dir=args.output_dir,
+            workers=args.workers,
         )
 
     coeff_aggregates = aggregate_final_coefficients(replications)

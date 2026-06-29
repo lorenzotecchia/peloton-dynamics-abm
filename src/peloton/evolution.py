@@ -44,7 +44,7 @@ def save_population(riders, path) -> None:
 def _assign_utilities(agents, model, cfg) -> None:
     """Utility = finishing position (winner highest); DNF scores 0 (worst)."""
 
-    rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
+    rank = {uid: pos for pos, (uid) in enumerate(model.finish_order)}
     decay = model.config.utility_decay  # lambda; larger -> steeper decay
 
     if not model.finish_order:
@@ -53,6 +53,7 @@ def _assign_utilities(agents, model, cfg) -> None:
     for a in agents:
         if a.unique_id in rank:
             pos = rank[a.unique_id]
+            a.utility = math.exp(-decay * pos)
             a.utility = math.exp(-decay * pos)
         else:
             a.utility = 0.0

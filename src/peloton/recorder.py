@@ -31,7 +31,7 @@ from peloton.config import PelotonConfig
 from peloton.model import PelotonModel
 
 
-def _rider_state(agent, active, solo_packs_cache, cfg) -> str:
+def _rider_state(agent, solo_packs_cache) -> str:
     """Label a rider's situation (mirrors scripts/plot_agent_tracking.py)."""
     if getattr(agent, "solo", False):
         for sp in solo_packs_cache:
@@ -135,7 +135,7 @@ def record_run(
     ]
 
     # --- static per-rider metadata, flattened coeffs, finish outcome ---
-    rank_of = {uid: r for r, (uid, _s) in enumerate(model.finish_order, start=1)}
+    rank_of = {uid: r for r, (uid) in enumerate(model.finish_order, start=1)}
     step_of = {uid: s for uid, s in model.finish_order}
     meta_rows = []
     for r in model.riders:
