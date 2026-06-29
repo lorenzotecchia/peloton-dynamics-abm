@@ -1,13 +1,3 @@
----
-title: Cycling Peloton MVP
-emoji: 🚴
-colorFrom: blue
-colorTo: green
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 # Cycling Peloton ABM
 
 Agent-based model of competitive cycling (peloton dynamics) built on
