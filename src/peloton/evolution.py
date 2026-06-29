@@ -56,6 +56,7 @@ def _assign_utilities(agents, model, cfg) -> None:
         if a.unique_id in rank:
             pos = rank[a.unique_id]
             a.utility = math.exp(-decay * pos)
+            a.utility = math.exp(-decay * pos)
         else:
             a.utility = 0.0
 
