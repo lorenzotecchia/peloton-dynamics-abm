@@ -23,8 +23,6 @@ import math
 import statistics
 from pathlib import Path
 
-import numpy as np
-
 from peloton.model import PelotonModel
 
 
@@ -46,7 +44,7 @@ def save_population(riders, path) -> None:
 def _assign_utilities(agents, model, cfg) -> None:
     """Utility = finishing position (winner highest); DNF scores 0 (worst)."""
 
-    rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
+    rank = {uid: pos for pos, (uid) in enumerate(model.finish_order)}
     decay = model.config.utility_decay  # lambda; larger -> steeper decay
 
     if not model.finish_order:
@@ -83,13 +81,6 @@ def _assign_utilities(agents, model, cfg) -> None:
 #    for a in agents:
 #        a.utility = team_utility[a.team_id]
 #
-
-
-def _similarity(a, b, cfg) -> float:
-    """Gaussian on the engine difference. s_m is a monotone function of w_max10,
-    so w_max10 alone captures 'races like me' — no need to weight both."""
-    z = (a.w_max10 - b.w_max10) / (cfg.sim_scale * cfg.w_max10_std)
-    return math.exp(-0.5 * z * z)
 
 
 def evolve(agents, model) -> None:
@@ -184,30 +175,6 @@ def _utility_stats(riders) -> dict:
     }
 
 
-def _race_totals(model) -> dict:
-    """Race-end aggregate SA targets (totals, not per-step means like the DataCollector).
-
-    Captures what the whole field expended over the race:
-      * time: a finisher's time is its finish step x dt; a rider that never
-        finished (DNF) spent the full race, model.steps x dt.
-      * stamina: anaerobic capacity consumed, w_full - w_prime, at race end
-        (mirrors _mean_stamina, which reports the *remaining* fraction).
-    Total* sums over all riders; Mean* divides by the rider count (per-agent average).
-    """
-    cfg = model.config
-    riders = model.riders
-    n = len(riders) or 1
-    finish_step = dict(model.finish_order)  # uid -> step it crossed the line
-    total_time = sum(finish_step.get(r.unique_id, model.steps) * cfg.dt for r in riders)
-    total_stamina = sum(r.w_full - r.w_prime for r in riders if r.w_full)
-    return {
-        "TotalTime": total_time,
-        "MeanTime": total_time / n,
-        "TotalStaminaSpent": total_stamina,
-        "MeanStaminaSpent": total_stamina / n,
-    }
-
-
 def run_generations(
     n_generations: int, max_steps: int, config=None, population_out: str | None = None
 ) -> list[dict]:
@@ -234,7 +201,6 @@ def run_generations(
         # Emergent metrics averaged over this generation's race, for SA targets.
         # (Race-mean, not final step: once everyone finishes the last step is empty.)
         entry.update(model.datacollector.get_model_vars_dataframe().mean().to_dict())
-        entry.update(_race_totals(model))  # race-end totals: time/stamina spent
         entry.update(_coeff_stats(model.riders))  # coeffs that raced this generation
 
         # Call evolve, which assigns utilities internally and updates coefficients

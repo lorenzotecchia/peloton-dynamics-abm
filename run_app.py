@@ -8,7 +8,8 @@ from mesa.visualization import SolaraViz
 from peloton.viz import (
     BreakawaysPlot,
     GroupsPlot,
-    RoadView,
+    RoadViewLargestPack,
+    RoadViewTop3,
     StaminaPlot,
     build_model,
     model_params,
@@ -18,7 +19,7 @@ model = build_model()
 
 page = SolaraViz(
     model,
-    components=[RoadView, StaminaPlot, GroupsPlot, BreakawaysPlot],
+    components=[RoadViewTop3, RoadViewLargestPack, StaminaPlot, GroupsPlot, BreakawaysPlot],
     model_params=model_params,
     name="Cycling Peloton MVP",
 )

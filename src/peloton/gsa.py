@@ -59,24 +59,24 @@ from peloton.evolution import run_generations
 # rider_width (viz-only geometry — riders are points, no dynamics) and seed (RNG).
 _MORRIS_KNOBS = [
     # name                       lo      hi      # default
-    ("w_max10_mean",            350.0,  550.0),  # 450  mean 10-min max power (W)
-    ("w_max10_std",              34.0,  102.0),  # 68   power spread across the field
-    ("cp_fraction",               0.60,   0.80), # 0.7  critical-power fraction
-    ("recovery_rate",             0.05,   0.20), # 0.1  W' recovery below CP
-    ("k_aero",                    0.60,   1.20), # 0.9  aerodynamic coefficient
-    ("c_roll",                    2.0,    5.0),  # 3.6  rolling-resistance coefficient
-    ("ref_speed_frac",            0.80,   0.95), # 0.9  v_hat fraction for stamina init
-    ("k_s",                       0.70,   1.00), # 0.9  pack-speed coefficient
-    ("breakaway_speed_frac",      0.85,   1.00), # 0.9  solo speed / threshold
-    ("breakaway_cooldown_steps",  2,     20),    # 10   breaker re-merge cooldown (int)
-    ("utility_decay",             0.10,   1.00), # 0.8  lambda: position->utility decay
-    ("evo_noise",                 0.0,    0.10), # 0.02 per-generation Gaussian noise
-    ("sim_scale",                 0.50,   2.00), # 1.0  rider-similarity bandwidth
-    ("evo_bottom_frac",           0.10,   0.40), # 0.2  fraction of worst updated
-    ("evo_top_frac",              0.05,   0.30), # 0.1  fraction of top used as donors
-    ("imitation_mu",              0.30,   1.00), # 0.75 blend toward donor (1=copy)
-    ("n_agents",                 24,    192),    # 96   pack size (int, 2-16/team)
-    ("n_teams",                   4,     24),    # 12   number of teams (int)
+    ("w_max10_mean", 350.0, 550.0),  # 450  mean 10-min max power (W)
+    ("w_max10_std", 34.0, 102.0),  # 68   power spread across the field
+    ("cp_fraction", 0.60, 0.80),  # 0.7  critical-power fraction
+    ("recovery_rate", 0.05, 0.20),  # 0.1  W' recovery below CP
+    ("k_aero", 0.60, 1.20),  # 0.9  aerodynamic coefficient
+    ("c_roll", 2.0, 5.0),  # 3.6  rolling-resistance coefficient
+    ("ref_speed_frac", 0.80, 0.95),  # 0.9  v_hat fraction for stamina init
+    ("k_s", 0.70, 1.00),  # 0.9  pack-speed coefficient
+    ("breakaway_speed_frac", 0.85, 1.00),  # 0.9  solo speed / threshold
+    ("breakaway_cooldown_steps", 2, 20),  # 10   breaker re-merge cooldown (int)
+    ("utility_decay", 0.10, 1.00),  # 0.8  lambda: position->utility decay
+    ("evo_noise", 0.0, 0.10),  # 0.02 per-generation Gaussian noise
+    ("sim_scale", 0.50, 2.00),  # 1.0  rider-similarity bandwidth
+    ("evo_bottom_frac", 0.10, 0.40),  # 0.2  fraction of worst updated
+    ("evo_top_frac", 0.05, 0.30),  # 0.1  fraction of top used as donors
+    ("imitation_mu", 0.30, 1.00),  # 0.75 blend toward donor (1=copy)
+    ("n_agents", 24, 192),  # 96   pack size (int, 2-16/team)
+    ("n_teams", 4, 24),  # 12   number of teams (int)
 ]
 PROBLEM_MORRIS = {
     "num_vars": len(_MORRIS_KNOBS),
@@ -88,13 +88,19 @@ PROBLEM_MORRIS = {
 # n_agents is integer, rounded from the float sample.
 PROBLEM_SOBOL = {
     "num_vars": 5,
-    "names": ["recovery_rate", "breakaway_speed_frac", "utility_decay", "k_s", "n_agents"],
+    "names": [
+        "recovery_rate",
+        "breakaway_speed_frac",
+        "utility_decay",
+        "k_s",
+        "n_agents",
+    ],
     "bounds": [
-        [0.05, 0.20],    # recovery_rate        (default 0.1)
-        [0.85, 1.00],    # breakaway_speed_frac (default 0.9)
-        [0.10, 1.00],    # utility_decay/lambda (default 0.8)
-        [0.70, 1.00],    # k_s                  (default 0.9)
-        [24, 192],       # n_agents (default 96; 2-16 riders/team at n_teams=12)
+        [0.05, 0.20],  # recovery_rate        (default 0.1)
+        [0.85, 1.00],  # breakaway_speed_frac (default 0.9)
+        [0.10, 1.00],  # utility_decay/lambda (default 0.8)
+        [0.70, 1.00],  # k_s                  (default 0.9)
+        [24, 192],  # n_agents (default 96; 2-16 riders/team at n_teams=12)
     ],
 }
 
@@ -108,8 +114,14 @@ INT_PARAMS = {"n_agents", "n_teams", "breakaway_cooldown_steps"}
 # race-means (per-step, via the DataCollector); the Total*/Mean* time & stamina
 # metrics are race-end aggregates over the whole field (see _race_totals).
 METRICS = [
-    "MeanStamina", "NumGroups", "Breakaways", "MeanExposure",
-    "TotalTime", "MeanTime", "TotalStaminaSpent", "MeanStaminaSpent",
+    "MeanStamina",
+    "NumGroups",
+    "Breakaways",
+    "MeanExposure",
+    "TotalTime",
+    "MeanTime",
+    "TotalStaminaSpent",
+    "MeanStaminaSpent",
 ]
 
 _MORRIS_LEVELS = 4
@@ -124,8 +136,9 @@ SOBOL_SECOND_ORDER = True
 def _evaluate(args: tuple) -> np.ndarray:
     """Run one sample's evolution for `replicates` seeds; return seed-mean final metrics."""
     row, names, generations, max_steps, replicates, base = args
-    overrides = {n: (int(round(v)) if n in INT_PARAMS else float(v))
-                 for n, v in zip(names, row)}
+    overrides = {
+        n: (int(round(v)) if n in INT_PARAMS else float(v)) for n, v in zip(names, row)
+    }
     out = np.empty((replicates, len(METRICS)))
     for s in range(replicates):
         # `base` holds the fixed scenario (road_length, dt, group_radius, ...);
@@ -160,15 +173,19 @@ def _print_progress(k: int, total: int, start: int, t0: float) -> None:
     completed = k - start
     if completed <= 0:
         return
-    rate = completed / elapsed                       # samples per second
+    rate = completed / elapsed  # samples per second
     eta = (total - k) / rate if rate > 0 else float("inf")
-    print(f"  [{k}/{total}] {100 * k / total:5.1f}%  "
-          f"elapsed {_fmt_dur(elapsed)}  eta {_fmt_dur(eta)}  "
-          f"({rate * 3600:.0f} samples/hr)", flush=True)
+    print(
+        f"  [{k}/{total}] {100 * k / total:5.1f}%  "
+        f"elapsed {_fmt_dur(elapsed)}  eta {_fmt_dur(eta)}  "
+        f"({rate * 3600:.0f} samples/hr)",
+        flush=True,
+    )
 
 
-def _simulate(X, names, generations, max_steps, replicates, processes, base,
-              y_path=None) -> np.ndarray:
+def _simulate(
+    X, names, generations, max_steps, replicates, processes, base, y_path=None
+) -> np.ndarray:
     """Evaluate every sample row in parallel -> Y of shape (n_samples, n_metrics).
 
     With ``y_path`` (single-node ``full`` mode), each completed sample is
@@ -194,10 +211,15 @@ def _simulate(X, names, generations, max_steps, replicates, processes, base,
     if start:
         print(f"  resuming from checkpoint: {start}/{len(X)} samples done", flush=True)
 
-    tasks = [(row, names, generations, max_steps, replicates, base) for row in X[start:]]
+    tasks = [
+        (row, names, generations, max_steps, replicates, base) for row in X[start:]
+    ]
     total = len(X)
-    print(f"  evaluating {len(tasks)} samples x {replicates} reps x {generations} gens "
-          f"on {processes} procs (progress + eta printed per sample) ...", flush=True)
+    print(
+        f"  evaluating {len(tasks)} samples x {replicates} reps x {generations} gens "
+        f"on {processes} procs (progress + eta printed per sample) ...",
+        flush=True,
+    )
     t0 = time.time()
     # imap keeps row order, so checkpoint row k is always written after k-1. The
     # checkpoint file (full mode) is opened for append; chunked evaluate mode has
@@ -240,29 +262,45 @@ def _analyze(method, problem, X, Y):
     for j, metric in enumerate(METRICS):
         if method == "morris":
             Si = morris_analyze(problem, X, Y[:, j], num_levels=_MORRIS_LEVELS)
-            cols = {"mu_star": Si["mu_star"], "mu_star_conf": Si["mu_star_conf"],
-                    "sigma": Si["sigma"]}
+            cols = {
+                "mu_star": Si["mu_star"],
+                "mu_star_conf": Si["mu_star_conf"],
+                "sigma": Si["sigma"],
+            }
         else:
-            Si = sobol_analyze.analyze(problem, Y[:, j],
-                                       calc_second_order=SOBOL_SECOND_ORDER)
-            cols = {"S1": Si["S1"], "S1_conf": Si["S1_conf"],
-                    "ST": Si["ST"], "ST_conf": Si["ST_conf"]}
+            Si = sobol_analyze.analyze(
+                problem, Y[:, j], calc_second_order=SOBOL_SECOND_ORDER
+            )
+            cols = {
+                "S1": Si["S1"],
+                "S1_conf": Si["S1_conf"],
+                "ST": Si["ST"],
+                "ST_conf": Si["ST_conf"],
+            }
             if SOBOL_SECOND_ORDER:
                 # S2/S2_conf are DxD with the pairwise indices in the upper triangle.
                 S2, S2c = Si["S2"], Si["S2_conf"]
                 for a in range(len(names)):
                     for b in range(a + 1, len(names)):
-                        s2_rows.append({"metric": metric,
-                                        "param_1": names[a], "param_2": names[b],
-                                        "S2": S2[a, b], "S2_conf": S2c[a, b]})
+                        s2_rows.append(
+                            {
+                                "metric": metric,
+                                "param_1": names[a],
+                                "param_2": names[b],
+                                "S2": S2[a, b],
+                                "S2_conf": S2c[a, b],
+                            }
+                        )
         for i, param in enumerate(names):
-            rows.append({"metric": metric, "param": param,
-                         **{k: v[i] for k, v in cols.items()}})
+            rows.append(
+                {"metric": metric, "param": param, **{k: v[i] for k, v in cols.items()}}
+            )
     return rows, s2_rows
 
 
-def run_method(method, n, generations, max_steps, replicates, processes,
-               out_dir, base=None):
+def run_method(
+    method, n, generations, max_steps, replicates, processes, out_dir, base=None
+):
     """Sample, simulate, and estimate indices for one method.
 
     Returns ``(df, df_s2)``: the first/total-order (or Morris) indices and, for
@@ -279,52 +317,108 @@ def run_method(method, n, generations, max_steps, replicates, processes,
         np.save(x_path, X)
 
     y_path = Path(out_dir) / f".gsa_{method}_Y.csv"
-    Y = _simulate(X, problem["names"], generations, max_steps, replicates, processes,
-                  base or {}, y_path=y_path)
+    Y = _simulate(
+        X,
+        problem["names"],
+        generations,
+        max_steps,
+        replicates,
+        processes,
+        base or {},
+        y_path=y_path,
+    )
     rows, s2_rows = _analyze(method, problem, X, Y)
     return pd.DataFrame(rows), (pd.DataFrame(s2_rows) if s2_rows else None)
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--mode", choices=["full", "sample", "evaluate", "merge"], default="full",
-                   help="full=sample+evaluate+analyze in one process (default); the rest "
-                        "split a run across a Slurm array: sample=write X.npy only; "
-                        "evaluate=simulate a row chunk of X -> Y chunk; merge=combine "
-                        "Y chunks and write the indices CSV")
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "--mode",
+        choices=["full", "sample", "evaluate", "merge"],
+        default="full",
+        help="full=sample+evaluate+analyze in one process (default); the rest "
+        "split a run across a Slurm array: sample=write X.npy only; "
+        "evaluate=simulate a row chunk of X -> Y chunk; merge=combine "
+        "Y chunks and write the indices CSV",
+    )
     p.add_argument("--method", choices=["morris", "sobol", "both"], default="both")
-    p.add_argument("--samples", type=int, default=512,
-                   help="SALib N: Morris trajectories (~N*(D+1) runs) / Sobol base "
-                        "(~N*(D+2) runs); use a power of 2 for Sobol")
-    p.add_argument("--replicates", type=int, default=5,
-                   help="seed replicates averaged per sample (tames ABM noise)")
-    p.add_argument("--generations", type=int, default=30,
-                   help="races per evolution run (lambda only bites across generations)")
-    p.add_argument("--max-steps", type=int, default=1000,
-                   help="steps per race; must be high enough for riders to finish "
-                        "(~600+) or utility is degenerate and lambda can't bite")
+    p.add_argument(
+        "--samples",
+        type=int,
+        default=512,
+        help="SALib N: Morris trajectories (~N*(D+1) runs) / Sobol base "
+        "(~N*(D+2) runs); use a power of 2 for Sobol",
+    )
+    p.add_argument(
+        "--replicates",
+        type=int,
+        default=5,
+        help="seed replicates averaged per sample (tames ABM noise)",
+    )
+    p.add_argument(
+        "--generations",
+        type=int,
+        default=30,
+        help="races per evolution run (lambda only bites across generations)",
+    )
+    p.add_argument(
+        "--max-steps",
+        type=int,
+        default=1000,
+        help="steps per race; must be high enough for riders to finish "
+        "(~600+) or utility is degenerate and lambda can't bite",
+    )
     p.add_argument("--processes", type=int, default=os.cpu_count())
     p.add_argument("--out-dir", default="data")
     # Fixed scenario knobs (not SA-varied): override PelotonConfig for every sample.
     # Defaults None = keep config defaults. For the long-road/coarse-dt experiment
     # pass e.g. --road-length 200000 --dt 60 --group-radius 300 (and bump --max-steps).
-    p.add_argument("--road-length", type=float, default=None, help="finish line in m (e.g. 200000)")
-    p.add_argument("--dt", type=float, default=None, help="seconds of race per step (e.g. 60)")
-    p.add_argument("--group-radius", type=float, default=None,
-                   help="longitudinal pack radius in m; scale with v*dt for coarse dt")
+    p.add_argument(
+        "--road-length", type=float, default=None, help="finish line in m (e.g. 200000)"
+    )
+    p.add_argument(
+        "--dt", type=float, default=None, help="seconds of race per step (e.g. 60)"
+    )
+    p.add_argument(
+        "--group-radius",
+        type=float,
+        default=None,
+        help="longitudinal pack radius in m; scale with v*dt for coarse dt",
+    )
     # --- split-job args (used by sample / evaluate / merge modes) ---
-    p.add_argument("--x-file", default=None,
-                   help="path to X.npy (written by sample; read by evaluate + merge)")
-    p.add_argument("--y-out", default=None, help="path to save the Y chunk .npy (evaluate)")
-    p.add_argument("--row-start", type=int, default=0, help="first X row to evaluate (evaluate)")
-    p.add_argument("--row-end", type=int, default=None, help="exclusive end X row (evaluate)")
-    p.add_argument("--merge-dir", default=None,
-                   help="directory holding the Y_<start>_<end>.npy chunks (merge)")
+    p.add_argument(
+        "--x-file",
+        default=None,
+        help="path to X.npy (written by sample; read by evaluate + merge)",
+    )
+    p.add_argument(
+        "--y-out", default=None, help="path to save the Y chunk .npy (evaluate)"
+    )
+    p.add_argument(
+        "--row-start", type=int, default=0, help="first X row to evaluate (evaluate)"
+    )
+    p.add_argument(
+        "--row-end", type=int, default=None, help="exclusive end X row (evaluate)"
+    )
+    p.add_argument(
+        "--merge-dir",
+        default=None,
+        help="directory holding the Y_<start>_<end>.npy chunks (merge)",
+    )
     args = p.parse_args()
 
-    base = {k: v for k, v in (("road_length", args.road_length), ("dt", args.dt),
-                              ("group_radius", args.group_radius)) if v is not None}
+    base = {
+        k: v
+        for k, v in (
+            ("road_length", args.road_length),
+            ("dt", args.dt),
+            ("group_radius", args.group_radius),
+        )
+        if v is not None
+    }
 
     # ── sample mode: draw X for one method and persist it (login node, seconds) ──
     if args.mode == "sample":
@@ -335,7 +429,8 @@ def main() -> None:
         xp.parent.mkdir(parents=True, exist_ok=True)
         np.save(xp, X)
         pd.DataFrame(X, columns=PROBLEMS[args.method]["names"]).to_csv(
-            xp.with_name(xp.stem + "_index.csv"), index_label="sample_idx")
+            xp.with_name(xp.stem + "_index.csv"), index_label="sample_idx"
+        )
         print(f"[gsa] {args.method}: saved X {X.shape} -> {xp}")
         print(f"[gsa] n_rows={len(X)}")  # the array wrapper reads this to size chunks
         return
@@ -346,14 +441,23 @@ def main() -> None:
             raise SystemExit("--mode evaluate needs a single --method (morris|sobol)")
         X = np.load(args.x_file)
         r_end = args.row_end if args.row_end is not None else len(X)
-        X_chunk = X[args.row_start:r_end]
-        Y_chunk = _simulate(X_chunk, PROBLEMS[args.method]["names"], args.generations,
-                            args.max_steps, args.replicates, args.processes, base)
+        X_chunk = X[args.row_start : r_end]
+        Y_chunk = _simulate(
+            X_chunk,
+            PROBLEMS[args.method]["names"],
+            args.generations,
+            args.max_steps,
+            args.replicates,
+            args.processes,
+            base,
+        )
         yp = Path(args.y_out)
         yp.parent.mkdir(parents=True, exist_ok=True)
         np.save(yp, Y_chunk)
-        print(f"[gsa] {args.method}: saved Y chunk {Y_chunk.shape} "
-              f"(rows {args.row_start}..{r_end}) -> {yp}")
+        print(
+            f"[gsa] {args.method}: saved Y chunk {Y_chunk.shape} "
+            f"(rows {args.row_start}..{r_end}) -> {yp}"
+        )
         return
 
     # ── merge mode: concat the Y chunks (row order) and write the indices CSV ────
@@ -362,22 +466,27 @@ def main() -> None:
             raise SystemExit("--mode merge needs a single --method (morris|sobol)")
         problem = PROBLEMS[args.method]
         X = np.load(args.x_file)
-        chunk_files = sorted(Path(args.merge_dir).glob("Y_*.npy"),
-                             key=lambda f: int(f.stem.split("_")[1]))
+        chunk_files = sorted(
+            Path(args.merge_dir).glob("Y_*.npy"),
+            key=lambda f: int(f.stem.split("_")[1]),
+        )
         if not chunk_files:
             raise FileNotFoundError(f"no Y_*.npy chunks found in {args.merge_dir}")
         Y = np.concatenate([np.load(f) for f in chunk_files], axis=0)
         if Y.shape != (len(X), len(METRICS)):
             raise ValueError(
                 f"merged Y {Y.shape} != expected ({len(X)}, {len(METRICS)}); a chunk is "
-                f"missing or overlapping in {args.merge_dir}.")
+                f"missing or overlapping in {args.merge_dir}."
+            )
         out_dir = Path(args.out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         rows, s2_rows = _analyze(args.method, problem, X, Y)
         out = out_dir / f"gsa_{args.method}.csv"
         pd.DataFrame(rows).to_csv(out, index=False)
-        print(f"[gsa] {args.method}: merged {len(chunk_files)} chunks "
-              f"({Y.shape[0]} rows) -> {out}")
+        print(
+            f"[gsa] {args.method}: merged {len(chunk_files)} chunks "
+            f"({Y.shape[0]} rows) -> {out}"
+        )
         if s2_rows:
             out2 = out_dir / f"gsa_{args.method}_S2.csv"
             pd.DataFrame(s2_rows).to_csv(out2, index=False)
@@ -390,8 +499,16 @@ def main() -> None:
     methods = ["morris", "sobol"] if args.method == "both" else [args.method]
     for method in methods:
         print(f"[gsa] {method} (N={args.samples}) base={base or 'defaults'}")
-        df, df_s2 = run_method(method, args.samples, args.generations, args.max_steps,
-                               args.replicates, args.processes, out_dir, base)
+        df, df_s2 = run_method(
+            method,
+            args.samples,
+            args.generations,
+            args.max_steps,
+            args.replicates,
+            args.processes,
+            out_dir,
+            base,
+        )
         out = out_dir / f"gsa_{method}.csv"
         df.to_csv(out, index=False)
         print(f"[gsa] wrote {out}")
