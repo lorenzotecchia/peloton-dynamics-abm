@@ -12,5 +12,9 @@ COPY --chown=user . /app
 # pyproject.toml is the single source of truth for deps; no requirements.txt.
 RUN pip install --no-cache-dir .
 
+# Replay the learned coefficients on HF the same as `solara --population`;
+# model.py self-loads this on every (re)instantiation so it survives reset.
+ENV PELOTON_POPULATION=data/population.json
+
 EXPOSE 7860
 CMD ["solara", "run", "run_app.py", "--host", "0.0.0.0", "--port", "7860"]
