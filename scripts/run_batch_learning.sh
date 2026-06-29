@@ -12,7 +12,7 @@ cd /home/fperlini1/peloton/   # <-- aggiusta al tuo path reale
 
 mkdir -p logs
 
-uv run python batch_learning.py \
+uv run python scripts/batch_learning.py \
   --replications 150 \
   --generations 100 \
   --output-dir /home/fperlini1/snellius_data/batch_learning
