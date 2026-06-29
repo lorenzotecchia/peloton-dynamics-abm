@@ -28,8 +28,9 @@ jobs:
           # itself ever needs to serve those binaries.
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
-          git rm -r --quiet --cached data-SA
           git checkout --orphan hf-deploy
+          git add -A
+          git rm -r --quiet --cached data-SA
           git commit --quiet -m "Deploy snapshot ${GITHUB_SHA}"
           git push --force \
             "https://${HF_USERNAME}:${HF_TOKEN}@huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE}" \
