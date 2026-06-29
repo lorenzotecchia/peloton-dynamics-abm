@@ -60,7 +60,6 @@ class PelotonModel(Model):
         self,
         config: PelotonConfig | None = None,
         *,
-        scenario=None,
         rng=None,
         population=None,
         physiology=None,

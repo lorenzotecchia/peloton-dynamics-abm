@@ -52,6 +52,7 @@ from __future__ import annotations
 import argparse
 import copy
 import statistics
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -62,13 +63,14 @@ from peloton.config import PelotonConfig
 from peloton.evolution import evolve
 from peloton.model import PelotonModel
 
-
 # --------------------------------------------------------------------------- #
 # Race simulation with per-step / per-agent tracking
 # --------------------------------------------------------------------------- #
 
 
-def _run_race_with_tracking(model: PelotonModel, max_steps: int) -> tuple[list[dict], list[dict]]:
+def _run_race_with_tracking(
+    model: PelotonModel, max_steps: int
+) -> tuple[list[dict], list[dict]]:
     """Run one race, recording per-step race stats and per-agent time-in-state stats.
 
     Returns (race_step_records, agent_stats).
@@ -209,9 +211,13 @@ def run_replication_comparison(
     rep_dir.mkdir(parents=True, exist_ok=True)
 
     pd.DataFrame(gen0_agents).to_csv(rep_dir / "gen_000_agents.csv", index=False)
-    pd.DataFrame(gen0_race_steps).to_csv(rep_dir / "gen_000_race_steps.csv", index=False)
+    pd.DataFrame(gen0_race_steps).to_csv(
+        rep_dir / "gen_000_race_steps.csv", index=False
+    )
     pd.DataFrame(last_agents).to_csv(rep_dir / "gen_last_agents.csv", index=False)
-    pd.DataFrame(last_race_steps).to_csv(rep_dir / "gen_last_race_steps.csv", index=False)
+    pd.DataFrame(last_race_steps).to_csv(
+        rep_dir / "gen_last_race_steps.csv", index=False
+    )
 
     return _summarize_replication(
         seed, gen0_race_steps, gen0_agents, last_race_steps, last_agents, cfg.n_agents
@@ -227,7 +233,11 @@ def _summarize_replication(
     n_agents: int,
 ) -> dict:
     def _safe_mean(values):
-        vals = [v for v in values if v is not None and not (isinstance(v, float) and np.isnan(v))]
+        vals = [
+            v
+            for v in values
+            if v is not None and not (isinstance(v, float) and np.isnan(v))
+        ]
         return float(statistics.mean(vals)) if vals else float("nan")
 
     def _agent_means(agents: list[dict]) -> dict:
@@ -273,15 +283,45 @@ def _summarize_replication(
 
 
 def run_all_replications(
-    num_replications: int, generations: int, max_steps: int, output_dir: Path
+    num_replications: int,
+    generations: int,
+    max_steps: int,
+    output_dir: Path,
+    workers: int = 1,
 ) -> list[dict]:
-    rows: list[dict] = []
-    for seed in range(num_replications):
-        print(f"Running {seed + 1}/{num_replications}...", end="\r")
-        row = run_replication_comparison(seed, generations, max_steps, output_dir)
-        if row:
-            rows.append(row)
-    print(f"Completed {len(rows)}/{num_replications} replications.")
+    if workers <= 1:
+        rows: list[dict] = []
+        for seed in range(num_replications):
+            print(f"Running {seed + 1}/{num_replications}...", end="\r")
+            row = run_replication_comparison(seed, generations, max_steps, output_dir)
+            if row:
+                rows.append(row)
+        print(f"Completed {len(rows)}/{num_replications} replications.")
+        return rows
+
+    rows = []
+    completed = 0
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(
+                run_replication_comparison, seed, generations, max_steps, output_dir
+            ): seed
+            for seed in range(num_replications)
+        }
+        for future in as_completed(futures):
+            seed = futures[future]
+            try:
+                row = future.result()
+            except Exception as exc:  # noqa: BLE001 - surface the seed that failed
+                print(f"\nReplication seed={seed} raised an exception: {exc!r}")
+                continue
+            completed += 1
+            print(
+                f"Completed {completed}/{num_replications} (seed {seed})...", end="\r"
+            )
+            if row:
+                rows.append(row)
+    print(f"\nCompleted {len(rows)}/{num_replications} replications.")
     return rows
 
 
@@ -299,12 +339,24 @@ def main() -> None:
     parser.add_argument("--generations", type=int, default=100)
     parser.add_argument("--max-steps", type=int, default=2000)
     parser.add_argument("--output-dir", default="data/generation_comparison")
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="number of parallel processes (1 = sequential)",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    rows = run_all_replications(args.replications, args.generations, args.max_steps, output_dir)
+    rows = run_all_replications(
+        args.replications,
+        args.generations,
+        args.max_steps,
+        output_dir,
+        workers=args.workers,
+    )
     df = pd.DataFrame(rows)
     summary_path = output_dir / "comparison_summary.csv"
     df.to_csv(summary_path, index=False)

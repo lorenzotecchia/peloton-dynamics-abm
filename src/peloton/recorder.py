@@ -31,7 +31,7 @@ from peloton.config import PelotonConfig
 from peloton.model import PelotonModel
 
 
-def _rider_state(agent, active, solo_packs_cache, cfg) -> str:
+def _rider_state(agent, solo_packs_cache) -> str:
     """Label a rider's situation (mirrors scripts/plot_agent_tracking.py)."""
     if getattr(agent, "solo", False):
         for sp in solo_packs_cache:
@@ -100,27 +100,29 @@ def record_run(
                 else float("nan")
             )
 
-            rows.append({
-                "step": step,
-                "time": t,
-                "unique_id": a.unique_id,
-                "team_id": a.team_id,
-                "x": x,
-                "y": a.pos[1],
-                "dist_to_finish": cfg.road_length - x,
-                "speed": speed,
-                "w_prime": a.w_prime,
-                "w_full": a.w_full,
-                "stamina_frac": stamina_frac,
-                "wind_power": a.wind_power,
-                "cf_eff": cf_eff,
-                "exposure": a.exposure,
-                "solo": int(a.solo),
-                "break_cooldown": a.break_cooldown,
-                "group_id": gid,
-                "group_size": gsize,
-                "state": _rider_state(a, active, solo_packs, cfg),
-            })
+            rows.append(
+                {
+                    "step": step,
+                    "time": t,
+                    "unique_id": a.unique_id,
+                    "team_id": a.team_id,
+                    "x": x,
+                    "y": a.pos[1],
+                    "dist_to_finish": cfg.road_length - x,
+                    "speed": speed,
+                    "w_prime": a.w_prime,
+                    "w_full": a.w_full,
+                    "stamina_frac": stamina_frac,
+                    "wind_power": a.wind_power,
+                    "cf_eff": cf_eff,
+                    "exposure": a.exposure,
+                    "solo": int(a.solo),
+                    "break_cooldown": a.break_cooldown,
+                    "group_id": gid,
+                    "group_size": gsize,
+                    "state": _rider_state(a, active, solo_packs, cfg),
+                }
+            )
 
         model.step()
         step += 1
@@ -133,7 +135,7 @@ def record_run(
     ]
 
     # --- static per-rider metadata, flattened coeffs, finish outcome ---
-    rank_of = {uid: r for r, (uid, _s) in enumerate(model.finish_order, start=1)}
+    rank_of = {uid: r for r, (uid) in enumerate(model.finish_order, start=1)}
     step_of = {uid: s for uid, s in model.finish_order}
     meta_rows = []
     for r in model.riders:
@@ -142,20 +144,22 @@ def record_run(
             for grp, params in r.coeffs.items()
             for p, v in params.items()
         }
-        meta_rows.append({
-            "unique_id": r.unique_id,
-            "team_id": r.team_id,
-            "w_max10": r.w_max10,
-            "cp": r.cp,
-            "s_m": r.s_m,
-            "s_cp": r.s_cp,
-            "w_full": r.w_full,
-            "utility": r.utility,
-            "finish_rank": rank_of.get(r.unique_id),
-            "finish_step": step_of.get(r.unique_id),
-            "finished": r.unique_id in rank_of,
-            **flat_coeffs,
-        })
+        meta_rows.append(
+            {
+                "unique_id": r.unique_id,
+                "team_id": r.team_id,
+                "w_max10": r.w_max10,
+                "cp": r.cp,
+                "s_m": r.s_m,
+                "s_cp": r.s_cp,
+                "w_full": r.w_full,
+                "utility": r.utility,
+                "finish_rank": rank_of.get(r.unique_id),
+                "finish_step": step_of.get(r.unique_id),
+                "finished": r.unique_id in rank_of,
+                **flat_coeffs,
+            }
+        )
 
     finish_rows = [
         {"rank": r, "unique_id": uid, "finish_step": s, "finish_time": s * dt}
@@ -228,7 +232,7 @@ def write_bundle(data: dict, out_dir: str, parquet: bool) -> list[str]:
         "n_timeseries_rows": len(data["agent_timeseries"]),
         "files": {
             "agent_timeseries": "one row per (step, agent): position, speed, stamina, "
-                                "wind power, cf_eff, exposure, solo/break state, group id/size",
+            "wind power, cf_eff, exposure, solo/break state, group id/size",
             "model_timeseries": "MeanStamina, NumGroups, Breakaways, MeanExposure per step",
             "agent_meta": "static physiology + flattened strategy coeffs + finish outcome",
             "finish_order": "rank, rider, finish step/time",
@@ -247,10 +251,16 @@ def dump_run(config: PelotonConfig, max_steps: int, out_dir: str, parquet: bool)
     data = record_run(config, max_steps)
     written = write_bundle(data, out_dir, parquet)
 
-    print(f"Dumped {data['n_steps']} steps x {data['n_agents']} riders "
-          f"({len(data['agent_timeseries'])} rows) to {out_dir}/")
-    print(f"  files: {', '.join(os.path.basename(p) for p in written)}, config.json, manifest.json")
-    print(f"  race: {data['n_finished']}/{data['n_agents']} finished in {data['n_steps']} steps")
+    print(
+        f"Dumped {data['n_steps']} steps x {data['n_agents']} riders "
+        f"({len(data['agent_timeseries'])} rows) to {out_dir}/"
+    )
+    print(
+        f"  files: {', '.join(os.path.basename(p) for p in written)}, config.json, manifest.json"
+    )
+    print(
+        f"  race: {data['n_finished']}/{data['n_agents']} finished in {data['n_steps']} steps"
+    )
     print("\nWhat you can analyze (see manifest.json -> analysis_menu):")
     for i, idea in enumerate(ANALYSIS_MENU, start=1):
         print(f"  {i:>2}. {idea}")

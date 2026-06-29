@@ -23,8 +23,6 @@ import math
 import statistics
 from pathlib import Path
 
-import numpy as np
-
 from peloton.model import PelotonModel
 
 
@@ -46,7 +44,7 @@ def save_population(riders, path) -> None:
 def _assign_utilities(agents, model, cfg) -> None:
     """Utility = finishing position (winner highest); DNF scores 0 (worst)."""
 
-    rank = {uid: pos for pos, (uid, _step) in enumerate(model.finish_order)}
+    rank = {uid: pos for pos, (uid) in enumerate(model.finish_order)}
     decay = model.config.utility_decay  # lambda; larger -> steeper decay
 
     if not model.finish_order:
@@ -55,6 +53,7 @@ def _assign_utilities(agents, model, cfg) -> None:
     for a in agents:
         if a.unique_id in rank:
             pos = rank[a.unique_id]
+            a.utility = math.exp(-decay * pos)
             a.utility = math.exp(-decay * pos)
         else:
             a.utility = 0.0
@@ -83,13 +82,6 @@ def _assign_utilities(agents, model, cfg) -> None:
 #    for a in agents:
 #        a.utility = team_utility[a.team_id]
 #
-
-
-def _similarity(a, b, cfg) -> float:
-    """Gaussian on the engine difference. s_m is a monotone function of w_max10,
-    so w_max10 alone captures 'races like me' — no need to weight both."""
-    z = (a.w_max10 - b.w_max10) / (cfg.sim_scale * cfg.w_max10_std)
-    return math.exp(-0.5 * z * z)
 
 
 def evolve(agents, model) -> None:
