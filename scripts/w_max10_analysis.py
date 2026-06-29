@@ -22,6 +22,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Repo root, so main.py runs correctly regardless of the cwd this script is called from.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 
 def run_dump(seed: int, max_steps: int = 2000, out_dir: str = None) -> str:
     """Run main.py dump and return the output directory."""
@@ -33,7 +36,7 @@ def run_dump(seed: int, max_steps: int = 2000, out_dir: str = None) -> str:
         cmd.extend(["--out-dir", out_dir])
     
     logger.info(f"Running race dump with seed {seed}...")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
     
     if result.returncode != 0:
         logger.error(f"Dump failed: {result.stderr}")
