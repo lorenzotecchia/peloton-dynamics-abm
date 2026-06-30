@@ -120,7 +120,7 @@ def record_run(
                     "break_cooldown": a.break_cooldown,
                     "group_id": gid,
                     "group_size": gsize,
-                    "state": _rider_state(a, active, solo_packs, cfg),
+                    "state": _rider_state(a, solo_packs),
                 }
             )
 
@@ -135,7 +135,7 @@ def record_run(
     ]
 
     # --- static per-rider metadata, flattened coeffs, finish outcome ---
-    rank_of = {uid: r for r, (uid) in enumerate(model.finish_order, start=1)}
+    rank_of = {uid: r for r, (uid, _s) in enumerate(model.finish_order, start=1)}
     step_of = {uid: s for uid, s in model.finish_order}
     meta_rows = []
     for r in model.riders:
